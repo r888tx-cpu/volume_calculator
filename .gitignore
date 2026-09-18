@@ -9,6 +9,7 @@ __pycache__/
 # Build & distribution
 build/
 dist/
+*.zip
 
 # User projects, reports, measurements
 Projects/
