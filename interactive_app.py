@@ -4162,6 +4162,12 @@ class VolumeApp(_AppBase):
             label=lbl_del,
             command=lambda: self._delete_point(pt_idx)
         )
+        menu.add_separator()
+        lbl_cancel = f"отмена (снять выделение {num_sel} т.)" if is_multi else "отмена (снять выделение)"
+        menu.add_command(
+            label=lbl_cancel,
+            command=self._clear_selected_points
+        )
 
         # Вычисляем экранные координаты курсора
         gui_ev = getattr(event, "guiEvent", None)
