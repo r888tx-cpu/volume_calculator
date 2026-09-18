@@ -301,7 +301,10 @@ def test_tk_canvas_widget_detection():
 def test_tk_canvas_labels_render_update_clear():
     """Проверяет жизненный цикл нативных текстовых меток на Tkinter Canvas."""
     import tkinter as tk
-    root = tk.Tk()
+    try:
+        root = tk.Tk()
+    except tk.TclError:
+        pytest.skip("Tkinter Tcl/Tk runtime not available in this environment")
     root.withdraw()
     try:
         tk_canvas = tk.Canvas(root, width=500, height=500)
