@@ -116,3 +116,91 @@ def test_theme_toggle_logic():
     app._toggle_app_theme()
     assert ctk.get_appearance_mode() == old_mode
 
+
+class TestSurfaceAssignmentModeAndSafety:
+    def test_assign_point_surface_toggle(self):
+        app = create_test_app()
+        # Initial: point 0 is auto
+        assert app.points[0].surface_type == "auto"
+
+        # 1. Assign to top with toggle_same=True
+        app._assign_point_surface(0, "top", toggle_same=True)
+        assert app.points[0].surface_type == "top"
+
+        # 2. Assign again to top with toggle_same=True -> should toggle back to auto
+        app._assign_point_surface(0, "top", toggle_same=True)
+        assert app.points[0].surface_type == "auto"
+
+        # 3. Assign to auto directly (via context menu)
+        app.points[0].surface_type = "bottom"
+        app._assign_point_surface(0, "auto", toggle_same=False)
+        assert app.points[0].surface_type == "auto"
+
+    def test_active_session_surface_assignment_and_volume(self):
+        app = VolumeApp()
+        app.withdraw()
+        try:
+            # Setup simple project with 4 boundary points and 1 inner point
+            app.points = [
+                GeoPoint(id="1", x=0.0, y=0.0, h=10.0, surface_type="auto"),
+                GeoPoint(id="2", x=10.0, y=0.0, h=10.0, surface_type="auto"),
+                GeoPoint(id="3", x=10.0, y=10.0, h=10.0, surface_type="auto"),
+                GeoPoint(id="4", x=0.0, y=10.0, h=10.0, surface_type="auto"),
+                GeoPoint(id="5", x=5.0, y=5.0, h=5.0, surface_type="auto"),
+            ]
+            app.boundary_indices = [0, 1, 2, 3]
+            app._invalidate_boundary_cache()
+            app._update_all_views()
+
+            # Initially point 5 (index 4) is auto (detected as bottom in excavation)
+            surfs = app._ensure_point_surfaces()
+            assert surfs[4] == "bottom"
+            assert app.points[4].surface_type == "auto"
+
+            # Switch mode to 3. Назначение: Верхняя поверхность
+            app.cbo_mode.set("3. Назначение: Верхняя поверхность")
+            app._on_cbo_mode_selected_cmd("3. Назначение: Верхняя поверхность")
+            assert app.current_mode.get() == "assign_top"
+
+            class MockEv:
+                def __init__(self, x, y, xdata, ydata, button=1, dblclick=False):
+                    self.x, self.y = x, y
+                    self.xdata, self.ydata = xdata, ydata
+                    self.button = button
+                    self.dblclick = dblclick
+
+            # 1. Double-click in assign_top mode -> MUST NOT add point 5 to boundary
+            dbl_ev = MockEv(200, 200, 5.0, 5.0, button=1, dblclick=True)
+            app._on_canvas_press(dbl_ev)
+            assert app.boundary_indices == [0, 1, 2, 3]
+            assert 4 not in app.boundary_indices
+
+            # 2. Single click on point 5 in assign_top mode -> MUST immediately update surface in current session
+            press_ev = MockEv(200, 200, 5.0, 5.0, button=1, dblclick=False)
+            app._on_canvas_press(press_ev)
+            release_ev = MockEv(200, 200, 5.0, 5.0, button=1, dblclick=False)
+            app._on_canvas_release(release_ev)
+
+            assert app.points[4].surface_type == "top"
+            # Crucial: verify that cached surfaces are invalidated and updated immediately
+            surfs_after = app._ensure_point_surfaces()
+            assert surfs_after[4] == "top"
+
+            # 3. Verify _is_two_surfaces remains False (since project has contour)
+            assert not app._is_two_surfaces()
+
+            # 4. Verify volume calculation succeeds
+            app.calculate_volume(silent=True)
+            assert app.calc_results is not None
+            assert "error" not in app.calc_results or app.calc_results.get("error") is None
+
+            # 5. Undo action -> point 5 restored to auto
+            app._undo_last_action()
+            assert app.points[4].surface_type == "auto"
+            surfs_undone = app._ensure_point_surfaces()
+            assert surfs_undone[4] == "bottom"
+
+        finally:
+            app.destroy()
+
+

@@ -570,6 +570,7 @@ class VolumeApp(_AppBase):
             "6. Рамка выделения (Shift+ЛКМ)",
         ]
         self.cbo_mode = ctk.CTkComboBox(grp_contour, values=_mode_values, height=26,
+                                         state="readonly",
                                          command=self._on_cbo_mode_selected_cmd)
         self.cbo_mode.set(_mode_values[0])
         self.cbo_mode.pack(fill=tk.X, pady=(1, 2))
@@ -3317,7 +3318,7 @@ class VolumeApp(_AppBase):
         if event.x is None or event.y is None:
             return
 
-        # 1. Двойной клик ЛКМ: встраивание новой точки в ближайшее ребро контура
+        # 1. Двойной клик ЛКМ: встраивание новой точки в ближайшее ребро контура (только для режимов контура)
         if event.button == 1 and getattr(event, "dblclick", False):
             # Отменяем отложенный одиночный клик
             if getattr(self, "_pending_single_click_timer", None) is not None:
@@ -3330,13 +3331,15 @@ class VolumeApp(_AppBase):
             self._pan_start = None
             self._pan_dragged = False
 
-            click_y = event.xdata
-            click_x = event.ydata
-            if click_y is not None and click_x is not None and self.points:
-                min_idx, min_dist = self._find_nearest_point(click_y, click_x)
-                tol = self._get_click_tolerance()
-                if min_dist <= tol and min_idx != -1 and min_idx not in self.boundary_indices:
-                    self._insert_point_into_boundary(min_idx)
+            cur_mode = self.current_mode.get() if hasattr(self, "current_mode") else ""
+            if cur_mode in ("select_boundary", "auto_hull"):
+                click_y = event.xdata
+                click_x = event.ydata
+                if click_y is not None and click_x is not None and self.points:
+                    min_idx, min_dist = self._find_nearest_point(click_y, click_x)
+                    tol = self._get_click_tolerance()
+                    if min_dist <= tol and min_idx != -1 and min_idx not in self.boundary_indices:
+                        self._insert_point_into_boundary(min_idx)
             return
 
         # 2. Нажатие ПКМ (кнопка 3): контекстное меню точки или перетаскивание вершины контура
@@ -3690,7 +3693,7 @@ class VolumeApp(_AppBase):
         if self._pan_start is None:
             return
 
-        btn = self._pan_start[6]
+        press_x, press_y, press_xdata, press_ydata, orig_xlim, orig_ylim, btn = self._pan_start
         was_dragged = self._pan_dragged
         self._pan_start = None
         self._pan_dragged = False
@@ -3703,6 +3706,22 @@ class VolumeApp(_AppBase):
             return
 
         if btn == 1:
+            # Если координаты отпускания потеряны (курсор ушёл к краю осей), восстанавливаем из точки нажатия
+            if (getattr(event, "xdata", None) is None or getattr(event, "ydata", None) is None) and press_xdata is not None and press_ydata is not None:
+                event.xdata = press_xdata
+                event.ydata = press_ydata
+
+            cur_mode = self.current_mode.get() if hasattr(self, "current_mode") else ""
+            if cur_mode in ("assign_top", "assign_bottom", "add_point"):
+                if getattr(self, "_pending_single_click_timer", None) is not None:
+                    try:
+                        self.after_cancel(self._pending_single_click_timer)
+                    except Exception:
+                        pass
+                    self._pending_single_click_timer = None
+                self._handle_point_click(event)
+                return
+
             # Одиночный клик ЛКМ с небольшой задержкой (чтобы отличить от двойного клика)
             if getattr(self, "_pending_single_click_timer", None) is not None:
                 try:
@@ -3793,32 +3812,10 @@ class VolumeApp(_AppBase):
                 self._schedule_boundary_calc(400)
 
         elif mode == "assign_top":
-            old_type = self.points[min_idx].surface_type
-            self.points[min_idx].surface_type = "top"
-            if min_idx in self.boundary_indices:
-                self.boundary_indices.remove(min_idx)
-            self._undo_stack.append(("assign", min_idx, old_type))
-            self._tin_excluded.clear()
-            self._tin_custom_simplices = None
-            self._update_all_views()
-            self._schedule_auto_save()
-            if len(self.boundary_indices) >= 3:
-                self._suppress_tab_switch = True
-                self._schedule_boundary_calc(400)
+            self._assign_point_surface(min_idx, "top", toggle_same=True)
 
         elif mode == "assign_bottom":
-            old_type = self.points[min_idx].surface_type
-            self.points[min_idx].surface_type = "bottom"
-            if min_idx in self.boundary_indices:
-                self.boundary_indices.remove(min_idx)
-            self._undo_stack.append(("assign", min_idx, old_type))
-            self._tin_excluded.clear()
-            self._tin_custom_simplices = None
-            self._update_all_views()
-            self._schedule_auto_save()
-            if len(self.boundary_indices) >= 3:
-                self._suppress_tab_switch = True
-                self._schedule_boundary_calc(400)
+            self._assign_point_surface(min_idx, "bottom", toggle_same=True)
 
 
     def _undo_last_action(self):
@@ -3851,16 +3848,38 @@ class VolumeApp(_AppBase):
         elif action[0] == "assign":
             idx = action[1]
             old_type = action[2]
-            self.points[idx].surface_type = old_type
+            was_bound = action[3] if len(action) > 3 else (old_type == "boundary")
+            if 0 <= idx < len(self.points):
+                self.points[idx].surface_type = old_type
+                if was_bound and idx not in self.boundary_indices:
+                    self.boundary_indices.append(idx)
+            self._invalidate_boundary_cache()
+            self._table_dirty = True
+            self._tin_dirty = True
+            self._2d_dirty = False
+            self._update_all_views()
+            self._schedule_auto_save()
+            if len(self.boundary_indices) >= 3:
+                self._suppress_tab_switch = True
+                self._schedule_boundary_calc(400)
         elif action[0] == "batch_assign":
-            # ("batch_assign", [(idx, old_type, ...), ...])
+            # ("batch_assign", [(idx, old_type, was_bound), ...])
             for item in action[1]:
                 idx, old_type = item[0], item[1]
+                was_bound = item[2] if len(item) > 2 else (old_type == "boundary")
                 if 0 <= idx < len(self.points):
                     self.points[idx].surface_type = old_type
-                    if old_type == "boundary" and idx not in self.boundary_indices:
+                    if was_bound and idx not in self.boundary_indices:
                         self.boundary_indices.append(idx)
             self._invalidate_boundary_cache()
+            self._table_dirty = True
+            self._tin_dirty = True
+            self._2d_dirty = False
+            self._update_all_views()
+            self._schedule_auto_save()
+            if len(self.boundary_indices) >= 3:
+                self._suppress_tab_switch = True
+                self._schedule_boundary_calc(400)
         elif action[0] == "tin_flip":
             _, t1, t2, old_t1, old_t2, _, _ = action
             if self._tin_simplices is not None and t1 < len(self._tin_simplices) and t2 < len(self._tin_simplices):
@@ -3952,31 +3971,7 @@ class VolumeApp(_AppBase):
         """Пакетное назначение выбранным точкам целевой поверхности ('top' или 'bottom')"""
         if not self._selected_points:
             return
-        undo_items = []
-        for idx in sorted(self._selected_points):
-            if 0 <= idx < len(self.points):
-                old_type = self.points[idx].surface_type
-                if old_type != target_surf:
-                    undo_items.append((idx, old_type))
-                    self.points[idx].surface_type = target_surf
-                    # Если точка была вершиной контура, исключаем её из контура
-                    if idx in self.boundary_indices:
-                        self.boundary_indices.remove(idx)
-        if undo_items:
-            self._undo_stack.append(("batch_assign", undo_items))
-        self._selected_points.clear()
-        self._update_selection_bar()
-        self._invalidate_boundary_cache()
-        self._tin_excluded.clear()
-        self._tin_custom_simplices = None
-        self._tin_dirty = True
-        self._table_dirty = True
-        self._2d_dirty = False
-        self._update_all_views()
-        self._schedule_auto_save()
-        if len(self.boundary_indices) >= 3:
-            self._suppress_tab_switch = True
-            self._schedule_boundary_calc(400)
+        self._assign_point_surface(-1, target_surf, toggle_same=False)
 
     def _clear_selected_points(self):
         """Сброс выделения точек"""
@@ -3984,8 +3979,10 @@ class VolumeApp(_AppBase):
         self._update_2d_selection_only()
         self._update_selection_bar()
 
-    def _assign_point_surface(self, target_idx: int, target_surf: str):
-        """Назначает целевую поверхность для точки (или выделенной группы точек)"""
+    def _assign_point_surface(self, target_idx: int, target_surf: str, toggle_same: bool = False):
+        """Назначает целевую поверхность для точки (или выделенной группы точек).
+        При toggle_same=True повторный клик по одиночной точке с тем же типом поверхности сбрасывает её в 'auto'.
+        """
         if not self.points:
             return
         undo_items = []
@@ -4002,9 +3999,14 @@ class VolumeApp(_AppBase):
         for idx in indices:
             if 0 <= idx < len(self.points):
                 old_type = self.points[idx].surface_type
-                if old_type != target_surf:
-                    undo_items.append((idx, old_type))
-                    self.points[idx].surface_type = target_surf
+                actual_target = target_surf
+                if toggle_same and len(indices) == 1 and old_type == target_surf:
+                    actual_target = "auto"
+
+                if old_type != actual_target:
+                    was_in_bound = (idx in self.boundary_indices)
+                    undo_items.append((idx, old_type, was_in_bound))
+                    self.points[idx].surface_type = actual_target
                     if idx in self.boundary_indices:
                         self.boundary_indices.remove(idx)
 
@@ -4124,6 +4126,7 @@ class VolumeApp(_AppBase):
 
         lbl_top = f"перенести в верхнюю поверхность ({num_sel} т.)" if is_multi else "перенести в верхнюю поверхность"
         lbl_bot = f"перенести в нижнюю поверхность ({num_sel} т.)" if is_multi else "перенести в нижнюю поверхность"
+        lbl_auto = f"сбросить в авто-определение ({num_sel} т.)" if is_multi else "сбросить в авто-определение"
         lbl_del = f"удалить ({num_sel} т.)" if is_multi else "удалить"
 
         menu.add_command(
@@ -4133,6 +4136,10 @@ class VolumeApp(_AppBase):
         menu.add_command(
             label=lbl_bot,
             command=lambda: self._assign_point_surface(pt_idx, "bottom")
+        )
+        menu.add_command(
+            label=lbl_auto,
+            command=lambda: self._assign_point_surface(pt_idx, "auto")
         )
         menu.add_separator()
         menu.add_command(
@@ -4419,6 +4426,9 @@ class VolumeApp(_AppBase):
         if getattr(self, "__dict__", {}).get("_is_separate_surfaces", False):
             return True
         if not self.points:
+            return False
+        # Проект с контуром сшивания всегда рассчитывается методом сшивания по контуру
+        if len(self.boundary_indices) >= 3 or len(self.boundary_indices) > 0:
             return False
         has_top = any(p.surface_type == "top" for p in self.points)
         has_bot = any(p.surface_type == "bottom" for p in self.points)
