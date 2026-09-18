@@ -246,7 +246,7 @@ except ImportError:
     _DND_AVAILABLE = False
 
 from geo_parser import GeoPoint, load_points_from_file, parse_line
-from app_utils import get_app_dir, get_projects_dir
+from app_utils import get_app_dir, get_projects_dir, __version__, APP_NAME, APP_TITLE
 from spatial_index import SpatialIndexService
 from project_storage import ProjectStorageService, NumpyJSONEncoder
 
@@ -277,7 +277,7 @@ class VolumeApp(_AppBase):
     def __init__(self):
         super().__init__()
         self._current_labeled_points = []
-        self.title("GeoVolume Pro — Расчет объема земляных масс по координатам (TIN / Сетка)")
+        self.title(f"{APP_TITLE} — Расчет объема земляных масс по координатам (TIN / Сетка)")
         self.geometry("1280x820")
         self.minsize(1000, 650)
         try:
@@ -4394,6 +4394,7 @@ class VolumeApp(_AppBase):
         )
 
         report = (
+            f"=== {APP_TITLE} ===\n"
             f"=== РЕЗУЛЬТАТЫ РАСЧЕТА ОБЪЕМА ===\n"
             f"• Объем насыпи (Fill):    {r['v_fill']:>10.3f} м³\n"
             f"• Объем выемки (Cut):     {r['v_cut']:>10.3f} м³\n"

@@ -5,6 +5,10 @@
 import sys
 import os
 
+__version__ = "1.0.0"
+APP_NAME = "GeoVolume Pro"
+APP_TITLE = f"{APP_NAME} v{__version__}"
+
 def get_app_dir() -> str:
     if getattr(sys, "frozen", False):
         return os.path.dirname(sys.executable)

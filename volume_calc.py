@@ -32,13 +32,14 @@ if hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
-from app_utils import get_app_dir
+from app_utils import get_app_dir, __version__, APP_NAME, APP_TITLE
 
 def run_cli(filepath: str, grid_res: float = 0.2):
     import numpy as np
     from geo_parser import load_points_from_file
     from volume_engine import VolumeCalculator
 
+    print(f"=== {APP_TITLE} ===")
     print(f"=== Чтение файла координат: {filepath} ===")
     points = load_points_from_file(filepath)
     if not points:
