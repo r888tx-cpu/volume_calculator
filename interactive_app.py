@@ -1607,7 +1607,7 @@ class VolumeApp(_AppBase):
 
         self.btn_sel_clear = ctk.CTkButton(
             self.frame_selection_bar,
-            text="✕ Снять",
+            text="✕ Отмена",
             width=0,
             height=24,
             fg_color="gray45",
