@@ -1,0 +1,24 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.class
+
+# Pytest cache
+.pytest_cache/
+
+# Build & distribution
+build/
+dist/
+
+# User projects, reports, measurements
+Projects/
+
+# Temporary / scratch files
+scratch/
+scratch_test_orientation.png
+*.bak*
+*.log
+
+# IDE & Editor settings
+.vscode/
+.idea/
