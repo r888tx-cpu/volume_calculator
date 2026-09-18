@@ -23,6 +23,22 @@ import math
 from datetime import datetime
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
+class _SafeStream:
+    def __init__(self):
+        self._buf = []
+    def write(self, s):
+        if s:
+            self._buf.append(s)
+            if len(self._buf) > 1000:
+                self._buf = self._buf[-500:]
+    def flush(self):
+        pass
+
+if getattr(sys, "stdout", None) is None:
+    sys.stdout = _SafeStream()
+if getattr(sys, "stderr", None) is None:
+    sys.stderr = _SafeStream()
+
 import customtkinter as ctk
 ctk.set_appearance_mode("system")    # "dark" / "light" / "system" — следует настройке Windows
 ctk.set_default_color_theme("blue")  # Базовая тема

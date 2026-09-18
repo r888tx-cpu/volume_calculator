@@ -9,8 +9,24 @@
 import sys
 import os
 
+class _SafeStream:
+    def __init__(self):
+        self._buf = []
+    def write(self, s):
+        if s:
+            self._buf.append(s)
+            if len(self._buf) > 1000:
+                self._buf = self._buf[-500:]
+    def flush(self):
+        pass
+
+if getattr(sys, "stdout", None) is None:
+    sys.stdout = _SafeStream()
+if getattr(sys, "stderr", None) is None:
+    sys.stderr = _SafeStream()
+
 # Настройка кодировки консоли для Windows
-if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+if hasattr(sys.stdout, "reconfigure"):
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except Exception:

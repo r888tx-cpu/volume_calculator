@@ -26,7 +26,7 @@ a = Analysis(
     hiddenimports=['tkinterdnd2', 'customtkinter', 'spatial_index', 'project_storage', 'ui_dialogs'],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=['pyinstaller_runtime_hook.py'],
     excludes=[
         'scipy.signal',
         'scipy.stats',
