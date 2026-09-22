@@ -376,6 +376,7 @@ class VolumeApp(_AppBase):
         self._diff_dirty = False
         self._2d_dirty = False
         self._contours_dirty = False
+        self._raw_contours_cache = None
         self._contours_view_initialized = False
         self._contours_pan_start = None
         self._contours_pan_dragged = False
@@ -1507,14 +1508,14 @@ class VolumeApp(_AppBase):
         return coord_str
 
     def _format_coord_contours(self, y_east, x_north):
-        """Быстрое отображение координат и отметок высот Z_верх/Z_низ под курсором на плане горизонталей (O(1))."""
+        """Быстрое отображение координат и отметок высот Z_верх/Z_низ или Z под курсором на плане горизонталей (O(1))."""
         if y_east is None or x_north is None:
             return ""
         coord_str = f"X (Север): {x_north:.3f},  Y (Восток): {y_east:.3f}"
-        r = getattr(self, "calc_results", None)
-        if r is not None:
-            gx = r.get("grid_x")
-            gy = r.get("grid_y")
+        data = self._get_contours_data() if hasattr(self, "_get_contours_data") else None
+        if data is not None:
+            gx = data.get("grid_x")
+            gy = data.get("grid_y")
             if gx is not None and gy is not None and gx.size > 0 and gy.size > 0:
                 min_x, max_x = float(gx.min()), float(gx.max())
                 min_y, max_y = float(gy.min()), float(gy.max())
@@ -1529,20 +1530,27 @@ class VolumeApp(_AppBase):
 
                     r_idx = int(round((y_east - min_y) / max(step_y, 1e-6)))
                     c_idx = int(round((x_north - min_x) / max(step_x, 1e-6)))
-                    z_top_grid = r.get("z_top_grid")
-                    z_bot_grid = r.get("z_bot_grid")
+                    z_top_grid = data.get("z_top_grid")
+                    z_bot_grid = data.get("z_bot_grid")
+                    is_single = data.get("is_single_survey", False)
                     show_top = self._show_top.get() if hasattr(self, "_show_top") else True
                     show_bottom = self._show_bottom.get() if hasattr(self, "_show_bottom") else True
 
                     h_parts = []
-                    if show_top and z_top_grid is not None and 0 <= r_idx < z_top_grid.shape[0] and 0 <= c_idx < z_top_grid.shape[1]:
-                        zt = float(z_top_grid[r_idx, c_idx])
-                        if not np.isnan(zt):
-                            h_parts.append(f"Z_верх: {zt:.2f} м")
-                    if show_bottom and z_bot_grid is not None and 0 <= r_idx < z_bot_grid.shape[0] and 0 <= c_idx < z_bot_grid.shape[1]:
-                        zb = float(z_bot_grid[r_idx, c_idx])
-                        if not np.isnan(zb):
-                            h_parts.append(f"Z_низ: {zb:.2f} м")
+                    if is_single:
+                        if z_top_grid is not None and 0 <= r_idx < z_top_grid.shape[0] and 0 <= c_idx < z_top_grid.shape[1]:
+                            zt = float(z_top_grid[r_idx, c_idx])
+                            if not np.isnan(zt):
+                                h_parts.append(f"Z: {zt:.2f} м")
+                    else:
+                        if show_top and z_top_grid is not None and 0 <= r_idx < z_top_grid.shape[0] and 0 <= c_idx < z_top_grid.shape[1]:
+                            zt = float(z_top_grid[r_idx, c_idx])
+                            if not np.isnan(zt):
+                                h_parts.append(f"Z_верх: {zt:.2f} м")
+                        if show_bottom and z_bot_grid is not None and 0 <= r_idx < z_bot_grid.shape[0] and 0 <= c_idx < z_bot_grid.shape[1]:
+                            zb = float(z_bot_grid[r_idx, c_idx])
+                            if not np.isnan(zb):
+                                h_parts.append(f"Z_низ: {zb:.2f} м")
                     if h_parts:
                         return f"[{' | '.join(h_parts)}]   {coord_str}"
         return coord_str
@@ -2488,8 +2496,99 @@ class VolumeApp(_AppBase):
         if hasattr(self, "canvas_contours") and self.canvas_contours is not None:
             self.canvas_contours.draw_idle()
 
+    def _get_contours_data(self):
+        """Возвращает данные для построения горизонталей:
+        1. Если выполнен расчет объема (self.calc_results) и есть контур (len(self.boundary_indices) >= 3),
+           возвращает расчетную сетку и полигон сшивания.
+        2. Иначе строит сетку напрямую по имеющимся точкам съемки (self.points), независимо от наличия контура.
+        """
+        if not self.points or len(self.points) < 3:
+            return None
+
+        # 1. Если есть готовый расчет объема внутри контура
+        if getattr(self, "calc_results", None) is not None and len(getattr(self, "boundary_indices", [])) >= 3:
+            r = self.calc_results
+            gx = r.get("grid_x")
+            gy = r.get("grid_y")
+            z_top = r.get("z_top_grid")
+            z_bot = r.get("z_bot_grid")
+            if gx is not None and gy is not None:
+                return {
+                    "grid_x": gx,
+                    "grid_y": gy,
+                    "z_top_grid": z_top,
+                    "z_bot_grid": z_bot,
+                    "boundary": r.get("boundary"),
+                    "is_single_survey": False,
+                }
+
+        # 2. Если контур не задан или расчет объема еще не выполнялся —
+        # строим интерполированную сетку напрямую по имеющимся точкам съемки
+        cache = getattr(self, "_raw_contours_cache", None)
+        pts_len = len(self.points)
+        bnd_len = len(getattr(self, "boundary_indices", []))
+        if cache is not None and cache.get("pts_len") == pts_len and cache.get("bnd_len") == bnd_len:
+            return cache.get("data")
+
+        try:
+            from scipy.interpolate import LinearNDInterpolator
+
+            pts_x = np.array([p.x for p in self.points], dtype=np.float64)
+            pts_y = np.array([p.y for p in self.points], dtype=np.float64)
+            pts_h = np.array([p.h for p in self.points], dtype=np.float64)
+
+            min_x, max_x = float(np.min(pts_x)), float(np.max(pts_x))
+            min_y, max_y = float(np.min(pts_y)), float(np.max(pts_y))
+            span_max = max(max_x - min_x, max_y - min_y)
+            if span_max < 1e-4:
+                return None
+
+            res = max(span_max / 350.0, 0.2)
+            gx = np.arange(min_x, max_x + res, res)
+            gy = np.arange(min_y, max_y + res, res)
+            grid_x, grid_y = np.meshgrid(gx, gy)
+
+            is_two = self._is_two_surfaces()
+            top_indices = [i for i, p in enumerate(self.points) if p.surface_type == "top"]
+            bot_indices = [i for i, p in enumerate(self.points) if p.surface_type == "bottom"]
+            has_two_explicit = (len(top_indices) >= 3 and len(bot_indices) >= 3)
+
+            boundary = None
+            if len(getattr(self, "boundary_indices", [])) >= 3:
+                boundary = np.array([[self.points[i].x, self.points[i].y] for i in self.boundary_indices if 0 <= i < len(self.points)])
+
+            if is_two or has_two_explicit:
+                interp_top = LinearNDInterpolator(np.column_stack((pts_x[top_indices], pts_y[top_indices])), pts_h[top_indices])
+                interp_bot = LinearNDInterpolator(np.column_stack((pts_x[bot_indices], pts_y[bot_indices])), pts_h[bot_indices])
+                z_top = interp_top(grid_x, grid_y)
+                z_bot = interp_bot(grid_x, grid_y)
+                is_single = False
+            else:
+                interp_all = LinearNDInterpolator(np.column_stack((pts_x, pts_y)), pts_h)
+                z_all = interp_all(grid_x, grid_y)
+                z_top = z_all
+                z_bot = None
+                is_single = True
+
+            data = {
+                "grid_x": grid_x,
+                "grid_y": grid_y,
+                "z_top_grid": z_top,
+                "z_bot_grid": z_bot,
+                "boundary": boundary,
+                "is_single_survey": is_single,
+            }
+            self._raw_contours_cache = {
+                "pts_len": pts_len,
+                "bnd_len": bnd_len,
+                "data": data,
+            }
+            return data
+        except Exception:
+            return None
+
     def _redraw_contours(self):
-        """Отрисовывает топографические горизонтали рельефа с векторной обрезкой по контуру"""
+        """Отрисовывает топографические горизонтали рельефа с векторной обрезкой по контуру (если задан) или по всем точкам съемки"""
         if not hasattr(self, "ax_contours") or self.ax_contours is None:
             return
 
@@ -2508,26 +2607,47 @@ class VolumeApp(_AppBase):
         self.ax_contours.xaxis.set_major_formatter(PlainOffsetFormatter(useOffset=True))
         self.ax_contours.yaxis.set_major_formatter(PlainOffsetFormatter(useOffset=True))
 
-        if not self.calc_results or not self.points or len(self.boundary_indices) < 3:
+        if not self.points or len(self.points) < 3:
             self.ax_contours.text(
                 0.5, 0.5,
-                "Для построения горизонталей рельефа выполните расчет объема\n(нажмите кнопку '⚡ Рассчитать объем' в левой панели)",
+                "Для построения горизонталей загрузите файл с точками съемки\n(требуется минимум 3 точки)",
                 transform=self.ax_contours.transAxes,
                 ha="center", va="center",
                 fontsize=11, color=title_color, alpha=0.7
             )
             if hasattr(self, "lbl_contours_stats") and self.lbl_contours_stats is not None:
-                self.lbl_contours_stats.configure(text="Горизонтали: расчет не выполнен")
+                if hasattr(self.lbl_contours_stats, "configure"):
+                    self.lbl_contours_stats.configure(text="Горизонтали: точки не загружены")
+                elif hasattr(self.lbl_contours_stats, "setText"):
+                    self.lbl_contours_stats.setText("Горизонтали: точки не загружены")
             if hasattr(self, "canvas_contours") and self.canvas_contours is not None:
                 self.canvas_contours.draw_idle()
             return
 
-        r = self.calc_results
-        gx = r.get("grid_x")
-        gy = r.get("grid_y")
-        z_top = r.get("z_top_grid")
-        z_bot = r.get("z_bot_grid")
-        boundary = r.get("boundary")
+        data = self._get_contours_data()
+        if data is None:
+            self.ax_contours.text(
+                0.5, 0.5,
+                "Недостаточно данных для построения горизонталей\n(точки коллинеарны или имеют одинаковые координаты)",
+                transform=self.ax_contours.transAxes,
+                ha="center", va="center",
+                fontsize=11, color=title_color, alpha=0.7
+            )
+            if hasattr(self, "lbl_contours_stats") and self.lbl_contours_stats is not None:
+                if hasattr(self.lbl_contours_stats, "configure"):
+                    self.lbl_contours_stats.configure(text="Горизонтали: ошибка построения")
+                elif hasattr(self.lbl_contours_stats, "setText"):
+                    self.lbl_contours_stats.setText("Горизонтали: ошибка построения")
+            if hasattr(self, "canvas_contours") and self.canvas_contours is not None:
+                self.canvas_contours.draw_idle()
+            return
+
+        gx = data.get("grid_x")
+        gy = data.get("grid_y")
+        z_top = data.get("z_top_grid")
+        z_bot = data.get("z_bot_grid")
+        boundary = data.get("boundary")
+        is_single = data.get("is_single_survey", False)
 
         if gx is None or gy is None:
             return
@@ -2544,12 +2664,15 @@ class VolumeApp(_AppBase):
                 fontsize=11, color=title_color, alpha=0.7
             )
             if hasattr(self, "lbl_contours_stats") and self.lbl_contours_stats is not None:
-                self.lbl_contours_stats.configure(text="Поверхности скрыты")
+                if hasattr(self.lbl_contours_stats, "configure"):
+                    self.lbl_contours_stats.configure(text="Поверхности скрыты")
+                elif hasattr(self.lbl_contours_stats, "setText"):
+                    self.lbl_contours_stats.setText("Поверхности скрыты")
             if hasattr(self, "canvas_contours") and self.canvas_contours is not None:
                 self.canvas_contours.draw_idle()
             return
 
-        # Полигон отсечения по контуру границы съёмки
+        # Полигон отсечения по контуру границы съёмки (если контур задан)
         poly_clip = None
         bound_closed_yx = None
         if boundary is not None and len(boundary) >= 3:
@@ -2560,12 +2683,17 @@ class VolumeApp(_AppBase):
 
         # Сбор диапазонов высот
         all_z_valid = []
-        top_valid = z_top[~np.isnan(z_top)] if (show_top and z_top is not None) else np.array([])
-        bot_valid = z_bot[~np.isnan(z_bot)] if (show_bottom and z_bot is not None) else np.array([])
-        if len(top_valid) > 0:
-            all_z_valid.append(top_valid)
-        if len(bot_valid) > 0:
-            all_z_valid.append(bot_valid)
+        if is_single:
+            survey_valid = z_top[~np.isnan(z_top)] if z_top is not None else np.array([])
+            if len(survey_valid) > 0:
+                all_z_valid.append(survey_valid)
+        else:
+            top_valid = z_top[~np.isnan(z_top)] if (show_top and z_top is not None) else np.array([])
+            bot_valid = z_bot[~np.isnan(z_bot)] if (show_bottom and z_bot is not None) else np.array([])
+            if len(top_valid) > 0:
+                all_z_valid.append(top_valid)
+            if len(bot_valid) > 0:
+                all_z_valid.append(bot_valid)
 
         if not all_z_valid:
             return
@@ -2602,12 +2730,18 @@ class VolumeApp(_AppBase):
 
         # Формирование инфо-строки
         stat_parts = [f"Шаг h = {c_step:g} м"]
-        if show_top and len(top_valid) > 0:
-            stat_parts.append(f"Верх: {float(np.min(top_valid)):.2f}..{float(np.max(top_valid)):.2f} м")
-        if show_bottom and len(bot_valid) > 0:
-            stat_parts.append(f"Низ: {float(np.min(bot_valid)):.2f}..{float(np.max(bot_valid)):.2f} м")
+        if is_single:
+            stat_parts.append(f"Рельеф съемки: {z_min_total:.2f}..{z_max_total:.2f} м ({len(self.points)} точек)")
+        else:
+            if show_top and len(top_valid) > 0:
+                stat_parts.append(f"Верх: {float(np.min(top_valid)):.2f}..{float(np.max(top_valid)):.2f} м")
+            if show_bottom and len(bot_valid) > 0:
+                stat_parts.append(f"Низ: {float(np.min(bot_valid)):.2f}..{float(np.max(bot_valid)):.2f} м")
         if hasattr(self, "lbl_contours_stats") and self.lbl_contours_stats is not None:
-            self.lbl_contours_stats.configure(text=" | ".join(stat_parts))
+            if hasattr(self.lbl_contours_stats, "configure"):
+                self.lbl_contours_stats.configure(text=" | ".join(stat_parts))
+            elif hasattr(self.lbl_contours_stats, "setText"):
+                self.lbl_contours_stats.setText(" | ".join(stat_parts))
 
         show_labels = self._show_contour_labels.get() if hasattr(self, "_show_contour_labels") and self._show_contour_labels is not None else True
         fmt_digits = 2 if c_step < 0.1 else (1 if c_step < 1.0 or any(abs(round(v, 1) - v) > 1e-4 for v in [z_min_total, z_max_total]) else 1)
@@ -2616,7 +2750,17 @@ class VolumeApp(_AppBase):
         legend_lines = []
         legend_labels = []
 
-        def _draw_surface_contours(grid_z, is_top_surface):
+        # Легкие маркеры точек съемки на заднем плане
+        pts_y = [p.y for p in self.points]
+        pts_x = [p.x for p in self.points]
+        pt_dot_col = "#94a3b8" if is_dark else "#64748b"
+        self.ax_contours.scatter(
+            pts_y, pts_x, s=3.5, color=pt_dot_col,
+            alpha=0.35 if len(self.points) < 5000 else 0.18,
+            zorder=1, label="_nolegend_"
+        )
+
+        def _draw_surface_contours(grid_z, is_top_surface, custom_label=None):
             if grid_z is None:
                 return
             z_clean = grid_z[~np.isnan(grid_z)]
@@ -2643,14 +2787,14 @@ class VolumeApp(_AppBase):
                 ls_style = "-"
                 alpha_idx = 0.95
                 alpha_sub = 0.65
-                surf_label = "Верхняя поверхность"
+                surf_label = custom_label or "Верхняя поверхность"
             else:
                 col_idx = "#38bdf8" if is_dark else "#0369a1"
                 col_sub = "#0ea5e9" if is_dark else "#0284c7"
-                ls_style = "--" if show_top else "-"
+                ls_style = "--" if (show_top and not is_single) else "-"
                 alpha_idx = 0.95
                 alpha_sub = 0.60
-                surf_label = "Нижняя поверхность"
+                surf_label = custom_label or "Нижняя поверхность"
 
             cs_sub = None
             if len(inter_levels) > 0:
@@ -2695,10 +2839,14 @@ class VolumeApp(_AppBase):
             legend_lines.append(matplotlib.lines.Line2D([0], [0], color=col_idx, lw=1.6, linestyle=ls_style))
             legend_labels.append(surf_label)
 
-        if show_bottom:
-            _draw_surface_contours(z_bot, is_top_surface=False)
-        if show_top:
-            _draw_surface_contours(z_top, is_top_surface=True)
+        if is_single:
+            use_top_palette = show_top or not show_bottom
+            _draw_surface_contours(z_top, is_top_surface=use_top_palette, custom_label="Рельеф съемки")
+        else:
+            if show_bottom:
+                _draw_surface_contours(z_bot, is_top_surface=False)
+            if show_top:
+                _draw_surface_contours(z_top, is_top_surface=True)
 
         if bound_closed_yx is not None:
             bound_col = "#10b981" if is_dark else "#059669"
@@ -3290,6 +3438,7 @@ class VolumeApp(_AppBase):
         self._diff_dirty = True
         self._2d_dirty = True
         self._contours_dirty = True
+        self._raw_contours_cache = None
         self._contours_view_initialized = False
 
     def _get_app_config_path(self):
@@ -5180,7 +5329,7 @@ class VolumeApp(_AppBase):
         else:
             self._tin_dirty = True
 
-        if current_tab == getattr(self, "TAB_CONTOURS", "Горизонтали") and self.calc_results:
+        if current_tab == getattr(self, "TAB_CONTOURS", "Горизонтали"):
             self._redraw_contours()
             self._contours_dirty = False
         else:
@@ -6021,9 +6170,8 @@ class VolumeApp(_AppBase):
             self._diff_dirty = True
             self._contours_dirty = True
         elif current_tab == getattr(self, "TAB_CONTOURS", "Горизонтали"):
-            if self.calc_results:
-                self._redraw_contours()
-                self._contours_dirty = False
+            self._redraw_contours()
+            self._contours_dirty = False
             self._2d_dirty = True
             self._3d_dirty = True
             self._diff_dirty = True
@@ -7344,10 +7492,10 @@ class VolumeApp(_AppBase):
                 elif hasattr(self, "canvas_tin") and self.canvas_tin is not None:
                     self._fit_tin_view()
             elif selected_tab == getattr(self, "TAB_CONTOURS", "Горизонтали"):
-                if getattr(self, "_contours_dirty", False) and self.calc_results:
+                if getattr(self, "_contours_dirty", False):
                     self._redraw_contours()
                     self._contours_dirty = False
-                elif not getattr(self, "_contours_view_initialized", False) and self.calc_results:
+                elif not getattr(self, "_contours_view_initialized", False):
                     self._redraw_contours()
                     self._contours_dirty = False
                 else:

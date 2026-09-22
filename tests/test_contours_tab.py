@@ -6,21 +6,8 @@ from interactive_app import VolumeApp
 
 @pytest.fixture
 def app():
-    # Setup Tk in headless/virtual mode
-    root = None
-    try:
-        root = tk.Tk()
-        root.withdraw()
-    except Exception:
-        pytest.skip("Tkinter display not available in test environment")
-    
     app_instance = VolumeApp.__new__(VolumeApp)
-    # Minimal mock setup to verify tab structure and contour methods
     yield app_instance
-    try:
-        root.destroy()
-    except Exception:
-        pass
 
 def test_contours_tab_constants():
     """Проверяет наличие константы TAB_CONTOURS и название вкладки"""
@@ -73,3 +60,38 @@ def test_contours_rendering_with_calc_results(app):
     app.lbl_contours_stats.configure.assert_called()
     call_args = app.lbl_contours_stats.configure.call_args[1]
     assert "Шаг h =" in call_args.get("text", "")
+
+def test_contours_rendering_without_contour_and_without_calc_results(app):
+    """Проверяет отрисовку горизонталей по имеющимся точкам съемки БЕЗ контура и БЕЗ предварительного расчета объема"""
+    from matplotlib.figure import Figure
+
+    app.fig_contours = Figure()
+    app.ax_contours = app.fig_contours.add_subplot(111)
+    app.canvas_contours = MagicMock()
+    app._show_top = MagicMock(get=lambda: True)
+    app._show_bottom = MagicMock(get=lambda: True)
+    app._show_contour_labels = MagicMock(get=lambda: True)
+    app.cbo_contour_step = MagicMock(get=lambda: "Авто")
+    app.lbl_contours_stats = MagicMock()
+    app._contours_view_initialized = False
+    app._raw_contours_cache = None
+    app._is_two_surfaces = MagicMock(return_value=False)
+
+    # 4 точки с разными высотами в плане, БЕЗ контура и БЕЗ calc_results
+    app.points = [
+        MagicMock(x=0.0, y=0.0, h=100.0, surface_type="auto"),
+        MagicMock(x=10.0, y=0.0, h=105.0, surface_type="auto"),
+        MagicMock(x=10.0, y=10.0, h=110.0, surface_type="auto"),
+        MagicMock(x=0.0, y=10.0, h=102.0, surface_type="auto"),
+    ]
+    app.boundary_indices = []
+    app.calc_results = None
+
+    app._redraw_contours()
+    # Проверяем, что горизонтали успешно построены и появились на холсте
+    assert len(app.ax_contours.collections) > 0 or len(app.ax_contours.lines) > 0
+    app.lbl_contours_stats.configure.assert_called()
+    call_args = app.lbl_contours_stats.configure.call_args[1]
+    text = call_args.get("text", "")
+    assert "Рельеф съемки" in text
+    assert "Шаг h =" in text
