@@ -1995,6 +1995,34 @@ class VolumeApp(_AppBase):
         b_top.pack(side=tk.LEFT, padx=(0, 4))
         add_tooltip(b_top, "Установить вид строго сверху (в плане) для ортогонального обзора")
 
+        cb_bot_3d = ctk.CTkCheckBox(
+            top_bar_3d,
+            text="▼ Нижняя",
+            variable=self._show_bottom,
+            command=self._on_surface_vis_toggle,
+            width=16,
+            height=16,
+            checkbox_width=16,
+            checkbox_height=16,
+            font=ctk.CTkFont(size=11, weight="bold"),
+        )
+        cb_bot_3d.pack(side=tk.RIGHT, padx=(4, 6))
+        add_tooltip(cb_bot_3d, "Показать или скрыть точки и рельеф нижней поверхности")
+
+        cb_top_3d = ctk.CTkCheckBox(
+            top_bar_3d,
+            text="▲ Верхняя",
+            variable=self._show_top,
+            command=self._on_surface_vis_toggle,
+            width=16,
+            height=16,
+            checkbox_width=16,
+            checkbox_height=16,
+            font=ctk.CTkFont(size=11, weight="bold"),
+        )
+        cb_top_3d.pack(side=tk.RIGHT, padx=(4, 4))
+        add_tooltip(cb_top_3d, "Показать или скрыть точки и рельеф верхней поверхности")
+
         from mpl_toolkits.mplot3d import Axes3D
         is_dark = (ctk.get_appearance_mode() == "Dark") if hasattr(ctk, "get_appearance_mode") else False
         title_color = "#e0e0e0" if is_dark else "#212529"
@@ -2012,7 +2040,6 @@ class VolumeApp(_AppBase):
         cw_3d.configure(bg=fig_bg)
         cw_3d.pack(fill=tk.BOTH, expand=True)
         cw_3d.bind("<Double-Button-1>", lambda e: self._open_fullscreen_3d())
-        self._fs_surface_panels[self.TAB_3D] = self._create_canvas_surface_panel(cw_3d)
 
         self._toolbar_3d = ProjectNavigationToolbar(self.canvas_3d, cw_3d, pack_toolbar=False)
         self._toolbar_3d.place(relx=0.0, rely=1.0, anchor="sw", relwidth=1.0, height=26)
@@ -2162,34 +2189,34 @@ class VolumeApp(_AppBase):
         tbl_toolbar = ctk.CTkFrame(self.tab_table, fg_color="transparent", height=40)
         tbl_toolbar.pack(fill=tk.X, side=tk.TOP, padx=5, pady=4)
 
-        b_add = ctk.CTkButton(tbl_toolbar, text="➕ Добавить точку", width=0,
-                              command=self._add_point_dialog)
+        b_add = ctk.CTkButton(tbl_toolbar, text="➕ Добавить точку", width=0, height=24,
+                              font=ctk.CTkFont(size=11), command=self._add_point_dialog)
         b_add.pack(side=tk.LEFT, padx=(0, 4))
         add_tooltip(b_add, "Вручную ввести координаты (Север X, Восток Y, Высота H) новой точки")
 
-        b_edit = ctk.CTkButton(tbl_toolbar, text="✏️ Редактировать", width=0,
-                               command=self._edit_selected_point_dialog)
+        b_edit = ctk.CTkButton(tbl_toolbar, text="✏️ Редактировать", width=0, height=24,
+                               font=ctk.CTkFont(size=11), command=self._edit_selected_point_dialog)
         b_edit.pack(side=tk.LEFT, padx=(0, 4))
         add_tooltip(b_edit, "Редактировать координаты или имя выбранной точки (также двойной клик)")
 
-        b_del = ctk.CTkButton(tbl_toolbar, text="🗑️ Удалить точку", width=0,
+        b_del = ctk.CTkButton(tbl_toolbar, text="🗑️ Удалить точку", width=0, height=24,
                               fg_color="#8B2020", hover_color="#A02828",
-                              command=self._delete_selected_point)
+                              font=ctk.CTkFont(size=11), command=self._delete_selected_point)
         b_del.pack(side=tk.LEFT, padx=(0, 4))
         add_tooltip(b_del, "Удалить выбранную точку из проекта")
 
-        b_toggle = ctk.CTkButton(tbl_toolbar, text="🔄 Сменить тип", width=0,
-                                 command=self._toggle_selected_point_type)
+        b_toggle = ctk.CTkButton(tbl_toolbar, text="🔄 Сменить тип", width=0, height=24,
+                                 font=ctk.CTkFont(size=11), command=self._toggle_selected_point_type)
         b_toggle.pack(side=tk.LEFT, padx=(0, 4))
         add_tooltip(b_toggle, "Переключить принадлежность точки (Верхняя / Нижняя / Контур / Авто)")
 
-        b_remap = ctk.CTkButton(tbl_toolbar, text="🔀 Колонки...", width=0,
-                                command=self._open_remap_dialog)
-        b_remap.pack(side=tk.LEFT, padx=(0, 8))
+        b_remap = ctk.CTkButton(tbl_toolbar, text="🔀 Колонки...", width=0, height=24,
+                                font=ctk.CTkFont(size=11), command=self._open_remap_dialog)
+        b_remap.pack(side=tk.LEFT, padx=(0, 6))
         add_tooltip(b_remap, "Настроить сопоставление столбцов таблицы с осями X, Y, Z")
 
         self.lbl_table_stats = ctk.CTkLabel(tbl_toolbar, text="Всего: 0 точек",
-                                             font=ctk.CTkFont(size=11, weight="bold"))
+                                             font=ctk.CTkFont(size=10, weight="bold"))
         self.lbl_table_stats.pack(side=tk.RIGHT, padx=5)
 
         # Контейнер для Treeview и Scrollbar
@@ -2963,12 +2990,16 @@ class VolumeApp(_AppBase):
                 messagebox.showerror("Ошибка", f"Не удалось удалить проект:\n{str(e)}")
 
     def _on_closing(self):
-        if "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST"):
-            try:
-                self.destroy()
-            except Exception:
-                pass
-            return
+        try:
+            if "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST"):
+                try:
+                    self.destroy()
+                except Exception:
+                    pass
+                return
+        except Exception:
+            pass
+
         try:
             if getattr(self, "_auto_save_timer", None) is not None:
                 try:
@@ -2976,19 +3007,28 @@ class VolumeApp(_AppBase):
                 except Exception:
                     pass
                 self._auto_save_timer = None
+        except Exception:
+            pass
+
+        try:
             if getattr(self, "points", None) and getattr(self, "_current_file_path", None):
                 self.save_project_state(self._current_file_path)
         except Exception:
             pass
+
+        try:
+            self.quit()
+        except Exception:
+            pass
+
         try:
             self.destroy()
         except Exception:
             pass
+
         try:
-            import os
             os._exit(0)
         except Exception:
-            import sys
             sys.exit(0)
 
     # ==================== ЗАГРУЗКА И ПЕРЕОПРЕДЕЛЕНИЕ ФАЙЛОВ ====================

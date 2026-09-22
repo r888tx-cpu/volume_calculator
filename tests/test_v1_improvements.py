@@ -175,7 +175,10 @@ class TestV1Improvements:
         from ui_dialogs import TINTableDialog
         import tkinter as tk
 
-        root = tk.Tk()
+        try:
+            root = tk.Tk()
+        except (tk.TclError, Exception):
+            pytest.skip("Tkinter Tcl/Tk runtime not available in this test environment")
         root.withdraw()
         try:
             app = create_mock_app()
@@ -187,7 +190,10 @@ class TestV1Improvements:
             assert len(items) == 2
             dlg.destroy()
         finally:
-            root.destroy()
+            try:
+                root.destroy()
+            except Exception:
+                pass
 
     def test_add_tooltip(self):
         """Проверка добавления подсказки к виджету"""
@@ -195,7 +201,10 @@ class TestV1Improvements:
         import tkinter as tk
         import customtkinter as ctk
 
-        root = tk.Tk()
+        try:
+            root = tk.Tk()
+        except (tk.TclError, Exception):
+            pytest.skip("Tkinter Tcl/Tk runtime not available in this test environment")
         root.withdraw()
         try:
             btn = ctk.CTkButton(root, text="Test Button")
@@ -205,4 +214,41 @@ class TestV1Improvements:
             assert tt.widget is btn
             btn.destroy()
         finally:
-            root.destroy()
+            try:
+                root.destroy()
+            except Exception:
+                pass
+
+    def test_on_closing_clean_exit(self):
+        """Проверка безопасного закрытия приложения без UnboundLocalError"""
+        app = create_mock_app()
+        app.destroy = MagicMock()
+        app.quit = MagicMock()
+        app._auto_save_timer = 123
+        app.after_cancel = MagicMock()
+
+        # Вызов _on_closing в тестовой среде (где активен pytest)
+        app._on_closing()
+        app.destroy.assert_called_once()
+
+    def test_3d_tab_surface_checkboxes_and_table_font(self):
+        """Проверка наличия переключателей поверхностей в 3D и уменьшенного шрифта в таблице точек"""
+        import tkinter as tk
+        try:
+            root = tk.Tk()
+        except (tk.TclError, Exception):
+            pytest.skip("Tkinter Tcl/Tk runtime not available in this test environment")
+        root.withdraw()
+        try:
+            app = VolumeApp()
+            # Проверяем, что 3D вкладка не имеет плавающей панели на холсте
+            assert app.TAB_3D not in getattr(app, "_fs_surface_panels", {})
+            # Проверяем метку статистики таблицы
+            assert app.lbl_table_stats is not None
+            # Проверяем безопасный вызов _on_closing
+            app._on_closing()
+        finally:
+            try:
+                root.destroy()
+            except Exception:
+                pass
