@@ -101,17 +101,17 @@ class SpatialIndexService:
         span_y = abs(ylim[1] - ylim[0])
         return max(span_x, span_y) * factor
 
-    def find_nearest_boundary_edge(self, pt_idx: int, boundary_indices: List[int]) -> int:
+    def find_nearest_boundary_edge_with_dist(self, pt_idx: int, boundary_indices: List[int]) -> Tuple[int, float]:
         """
-        Находит индекс ребра контура k, к которому точка pt_idx ближе всего.
+        Находит индекс ребра контура k и точное расстояние до него.
         Ребро k соединяет boundary_indices[k] и boundary_indices[(k + 1) % N].
-        Возвращает k (от 0 до N - 1).
+        Возвращает (k, distance).
         """
         N = len(boundary_indices)
         if N < 2:
-            return max(0, N - 1)
+            return max(0, N - 1), 0.0
         if pt_idx < 0 or pt_idx >= len(self._points):
-            return 0
+            return 0, float("inf")
 
         p_target = self._points[pt_idx]
         P = np.array([p_target.y, p_target.x], dtype=float)
@@ -130,7 +130,8 @@ class SpatialIndexService:
             t[zero_mask] = 0.0
             proj = A + t[:, np.newaxis] * AB
             dists = np.linalg.norm(P - proj, axis=1)
-            return int(np.argmin(dists))
+            best_k = int(np.argmin(dists))
+            return best_k, float(dists[best_k])
         except Exception:
             best_dist = float("inf")
             best_k = 0
@@ -152,4 +153,41 @@ class SpatialIndexService:
                 if dist < best_dist:
                     best_dist = dist
                     best_k = k
-            return best_k
+            return best_k, float(best_dist)
+
+    def find_nearest_boundary_edge(self, pt_idx: int, boundary_indices: List[int]) -> int:
+        """
+        Находит индекс ребра контура k, к которому точка pt_idx ближе всего.
+        Ребро k соединяет boundary_indices[k] и boundary_indices[(k + 1) % N].
+        Возвращает k (от 0 до N - 1).
+        """
+        k, _ = self.find_nearest_boundary_edge_with_dist(pt_idx, boundary_indices)
+        return k
+
+
+def segments_intersect(p1: np.ndarray, p2: np.ndarray, p3: np.ndarray, p4: np.ndarray) -> bool:
+    """Проверяет строгое пересечение двух 2D-отрезков p1-p2 и p3-p4."""
+    def ccw(A, B, C):
+        return (C[1] - A[1]) * (B[0] - A[0]) > (B[1] - A[1]) * (C[0] - A[0])
+    return (ccw(p1, p3, p4) != ccw(p2, p3, p4)) and (ccw(p1, p2, p3) != ccw(p1, p2, p4))
+
+
+def polygon_self_intersects(coords: np.ndarray) -> bool:
+    """
+    Проверяет 2D-полигон на наличие самопересечений (петель / восьмерок).
+    coords: массив (N, 2) точек полигона в порядке обхода.
+    """
+    N = len(coords)
+    if N < 4:
+        return False
+    for i in range(N):
+        p1 = coords[i]
+        p2 = coords[(i + 1) % N]
+        for j in range(i + 2, N):
+            if i == 0 and j == N - 1:
+                continue
+            p3 = coords[j]
+            p4 = coords[(j + 1) % N]
+            if segments_intersect(p1, p2, p3, p4):
+                return True
+    return False

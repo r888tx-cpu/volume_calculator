@@ -25,6 +25,15 @@ if getattr(sys, "stdout", None) is None:
 if getattr(sys, "stderr", None) is None:
     sys.stderr = _SafeStream()
 
+# Настройка постоянного кэша шрифтов matplotlib (исключает долгое сканирование C:\Windows\Fonts при каждом старте)
+try:
+    _app_data = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    _mpl_cache = os.path.join(_app_data, "GeoVolumePro", "mpl_cache")
+    os.makedirs(_mpl_cache, exist_ok=True)
+    os.environ["MPLCONFIGDIR"] = _mpl_cache
+except Exception:
+    pass
+
 # Настройка кодировки консоли для Windows
 if hasattr(sys.stdout, "reconfigure"):
     try:

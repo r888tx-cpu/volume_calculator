@@ -425,35 +425,45 @@ class CoordinateRemapDialog(tk.Toplevel):
         f_cbo = ctk.CTkFont(size=12)
         f_drop = ctk.CTkFont(size=11)
 
-        ctk.CTkLabel(map_frame, text="ID / Имя:", font=f_lbl).grid(row=0, column=0, sticky=tk.W, padx=(4, 6), pady=6)
-        self.cbo_id = ctk.CTkComboBox(map_frame, values=col_options, width=170, font=f_cbo, dropdown_font=f_drop)
-        self.cbo_id.grid(row=0, column=1, sticky=tk.EW, padx=(0, 14), pady=6)
+        map_frame.columnconfigure(0, weight=0)
+        map_frame.columnconfigure(1, weight=0)
+        map_frame.columnconfigure(2, weight=0)
+        map_frame.columnconfigure(3, weight=0)
+        map_frame.columnconfigure(4, weight=0)
+
+        lbl_id = ctk.CTkLabel(map_frame, text="ID / Имя:", font=f_lbl)
+        lbl_id.grid(row=0, column=0, sticky=tk.E, padx=(4, 6), pady=6)
+        self.cbo_id = ctk.CTkComboBox(map_frame, values=col_options, width=150, font=f_cbo, dropdown_font=f_drop)
+        self.cbo_id.grid(row=0, column=1, sticky=tk.W, padx=(0, 24), pady=6)
         self.cbo_id.set(col_options[min(def_id, self.num_cols - 1)])
 
-        ctk.CTkLabel(map_frame, text="Север X (м):", font=f_lbl_b).grid(row=0, column=2, sticky=tk.W, padx=(6, 6), pady=6)
-        self.cbo_x = ctk.CTkComboBox(map_frame, values=col_options, width=170, font=f_cbo, dropdown_font=f_drop)
-        self.cbo_x.grid(row=0, column=3, sticky=tk.EW, padx=(0, 16), pady=6)
+        lbl_x = ctk.CTkLabel(map_frame, text="Север X (м):", font=f_lbl_b)
+        lbl_x.grid(row=0, column=2, sticky=tk.E, padx=(6, 6), pady=6)
+        self.cbo_x = ctk.CTkComboBox(map_frame, values=col_options, width=150, font=f_cbo, dropdown_font=f_drop)
+        self.cbo_x.grid(row=0, column=3, sticky=tk.W, padx=(0, 20), pady=6)
         self.cbo_x.set(col_options[min(def_x, self.num_cols - 1)])
 
-        ctk.CTkLabel(map_frame, text="Высота Z / H (м):", font=f_lbl).grid(row=1, column=0, sticky=tk.W, padx=(4, 6), pady=6)
-        self.cbo_z = ctk.CTkComboBox(map_frame, values=col_options, width=170, font=f_cbo, dropdown_font=f_drop)
-        self.cbo_z.grid(row=1, column=1, sticky=tk.EW, padx=(0, 14), pady=6)
+        lbl_z = ctk.CTkLabel(map_frame, text="Высота Z / H (м):", font=f_lbl)
+        lbl_z.grid(row=1, column=0, sticky=tk.E, padx=(4, 6), pady=6)
+        self.cbo_z = ctk.CTkComboBox(map_frame, values=col_options, width=150, font=f_cbo, dropdown_font=f_drop)
+        self.cbo_z.grid(row=1, column=1, sticky=tk.W, padx=(0, 24), pady=6)
         self.cbo_z.set(col_options[min(def_z, self.num_cols - 1)])
 
-        ctk.CTkLabel(map_frame, text="Восток Y (м):", font=f_lbl_b).grid(row=1, column=2, sticky=tk.W, padx=(6, 6), pady=6)
-        self.cbo_y = ctk.CTkComboBox(map_frame, values=col_options, width=170, font=f_cbo, dropdown_font=f_drop)
-        self.cbo_y.grid(row=1, column=3, sticky=tk.EW, padx=(0, 16), pady=6)
+        lbl_y = ctk.CTkLabel(map_frame, text="Восток Y (м):", font=f_lbl_b)
+        lbl_y.grid(row=1, column=2, sticky=tk.E, padx=(6, 6), pady=6)
+        self.cbo_y = ctk.CTkComboBox(map_frame, values=col_options, width=150, font=f_cbo, dropdown_font=f_drop)
+        self.cbo_y.grid(row=1, column=3, sticky=tk.W, padx=(0, 20), pady=6)
         self.cbo_y.set(col_options[min(def_y, self.num_cols - 1)])
 
         btn_swap = ctk.CTkButton(
             map_frame,
             text="🔄 Поменять X ↔ Y",
             command=self._swap_xy,
-            width=180,
+            width=170,
             height=38,
             font=ctk.CTkFont(size=12, weight="bold")
         )
-        btn_swap.grid(row=0, column=4, rowspan=2, padx=(6, 4), pady=6, sticky=tk.NSEW)
+        btn_swap.grid(row=0, column=4, rowspan=2, padx=(10, 4), pady=6, sticky=tk.W)
 
         btn_box = ctk.CTkFrame(main_frame, fg_color="transparent")
         btn_box.pack(fill=tk.X, pady=(2, 0))
@@ -642,6 +652,7 @@ class FullScreen3DViewer(tk.Toplevel):
         self.canvas.mpl_connect("button_release_event", self._on_mouse_release)
         self.bind("<Escape>", lambda e: self.destroy())
         self.bind("<F11>", lambda e: self._toggle_fullscreen())
+        self.canvas.get_tk_widget().bind("<Double-Button-1>", lambda e: self.destroy(), add="+")
 
         self._orig_limits = None
         self._rmb_pan_start = None
@@ -713,6 +724,9 @@ class FullScreen3DViewer(tk.Toplevel):
         self.canvas.draw()
 
     def _on_mouse_press(self, event):
+        if event.button == 1 and getattr(event, "dblclick", False):
+            self.destroy()
+            return
         if event.button == 3:
             self._rmb_pan_start = (
                 event.x, event.y,
@@ -823,3 +837,223 @@ class FullScreen3DViewer(tk.Toplevel):
                 messagebox.showinfo("Сохранено", f"Изображение сохранено:\n{out_path}")
             except Exception as e:
                 messagebox.showerror("Ошибка", f"Не удалось сохранить изображение:\n{e}")
+
+
+class TINTableDialog(tk.Toplevel):
+    """Отдельное диалоговое окно для детального просмотра и управления таблицей треугольников триангуляции (TIN)."""
+
+    def __init__(self, parent, app=None, points=None, triangles=None, excluded_set=None, on_toggle_callback=None):
+        super().__init__(parent)
+        self.app = app
+        self.points = points if points is not None else getattr(app, "points", None)
+        if triangles is not None:
+            self.triangles = triangles
+        else:
+            tri_src = getattr(app, "_tin_simplices", None)
+            if tri_src is None:
+                tri_src = getattr(app, "_tin_triangles", None)
+            self.triangles = tri_src
+        self.excluded_set = set(excluded_set) if excluded_set is not None else set(getattr(app, "_tin_excluded", set()))
+        self.on_toggle_callback = on_toggle_callback
+        self.title("Таблица треугольников триангуляции (TIN)")
+        self.geometry("860x580")
+        self.minsize(700, 400)
+
+        is_dark = (ctk.get_appearance_mode().lower() == "dark") if hasattr(ctk, "get_appearance_mode") else True
+        bg_col = "#1a1e24" if is_dark else "#f8f9fa"
+        self.configure(bg=bg_col)
+        set_window_dark_titlebar(self)
+        self.transient(parent)
+
+        # Верхняя панель со статистикой
+        top_frame = ctk.CTkFrame(self, fg_color="transparent")
+        top_frame.pack(fill=tk.X, padx=14, pady=(12, 6))
+
+        self.lbl_stats = ctk.CTkLabel(
+            top_frame,
+            text="",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        self.lbl_stats.pack(side=tk.LEFT)
+
+        lbl_hint = ctk.CTkLabel(
+            top_frame,
+            text="💡 Двойной клик по строке переключает статус (Активен / Исключен)",
+            font=ctk.CTkFont(size=11),
+            text_color="#888888"
+        )
+        lbl_hint.pack(side=tk.RIGHT)
+
+        # Таблица (ttk.Treeview)
+        table_frame = ctk.CTkFrame(self, fg_color="transparent")
+        table_frame.pack(fill=tk.BOTH, expand=True, padx=14, pady=6)
+
+        tree_bg = "#25282c" if is_dark else "#ffffff"
+        tree_fg = "#f0f0f0" if is_dark else "#202020"
+        head_bg = "#343a40" if is_dark else "#e9ecef"
+        head_fg = "#ffffff" if is_dark else "#101010"
+        sel_bg = "#1f538d" if is_dark else "#3b8ed0"
+
+        style = ttk.Style(self)
+        try:
+            style.theme_use("clam")
+        except Exception:
+            pass
+        style.configure("TIN.Treeview",
+                        background=tree_bg,
+                        foreground=tree_fg,
+                        fieldbackground=tree_bg,
+                        font=("Consolas", 10),
+                        rowheight=26)
+        style.configure("TIN.Treeview.Heading",
+                        background=head_bg,
+                        foreground=head_fg,
+                        font=("Segoe UI", 10, "bold"),
+                        padding=(4, 4))
+        style.map("TIN.Treeview",
+                  background=[("selected", sel_bg)],
+                  foreground=[("selected", "#ffffff")])
+
+        cols = ("idx", "v1", "v2", "v3", "area", "status")
+        self.tree = ttk.Treeview(table_frame, columns=cols, show="headings", style="TIN.Treeview")
+        self.tree.heading("idx", text="№")
+        self.tree.heading("v1", text="Верш. 1")
+        self.tree.heading("v2", text="Верш. 2")
+        self.tree.heading("v3", text="Верш. 3")
+        self.tree.heading("area", text="Площадь м²")
+        self.tree.heading("status", text="Статус")
+
+        self.tree.column("idx", width=60, anchor=tk.CENTER)
+        self.tree.column("v1", width=100, anchor=tk.CENTER)
+        self.tree.column("v2", width=100, anchor=tk.CENTER)
+        self.tree.column("v3", width=100, anchor=tk.CENTER)
+        self.tree.column("area", width=120, anchor=tk.E)
+        self.tree.column("status", width=130, anchor=tk.CENTER)
+
+        sb_y = ttk.Scrollbar(table_frame, orient=tk.VERTICAL, command=self.tree.yview)
+        self.tree.configure(yscrollcommand=sb_y.set)
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        sb_y.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.tree.bind("<Double-Button-1>", self._on_double_click)
+
+        # Нижняя панель с кнопками
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.pack(fill=tk.X, padx=14, pady=(8, 12))
+
+        self.btn_toggle = ctk.CTkButton(
+            btn_frame,
+            text="Переключить статус",
+            command=self._toggle_selected,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            width=160,
+            height=30
+        )
+        self.btn_toggle.pack(side=tk.LEFT, padx=(0, 8))
+
+        self.btn_reset_all = ctk.CTkButton(
+            btn_frame,
+            text="Включить все",
+            command=self._enable_all,
+            font=ctk.CTkFont(size=11),
+            width=120,
+            height=30
+        )
+        self.btn_reset_all.pack(side=tk.LEFT, padx=(0, 8))
+
+        btn_close = ctk.CTkButton(
+            btn_frame,
+            text="Закрыть",
+            command=self.destroy,
+            font=ctk.CTkFont(size=11),
+            width=100,
+            height=30,
+            fg_color="gray40",
+            hover_color="gray30"
+        )
+        btn_close.pack(side=tk.RIGHT)
+
+        self.bind("<Escape>", lambda e: self.destroy())
+        self._populate_table()
+
+    def _populate_table(self):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        if self.triangles is None or len(self.triangles) == 0 or not self.points:
+            self.lbl_stats.configure(text="Треугольники отсутствуют")
+            return
+
+        total_triangles = len(self.triangles)
+        active_count = 0
+        total_area = 0.0
+
+        for i, tri in enumerate(self.triangles):
+            is_excluded = i in self.excluded_set
+            status = "❌ Исключен" if is_excluded else "✓ Активен"
+            p1 = self.points[int(tri[0])]
+            p2 = self.points[int(tri[1])]
+            p3 = self.points[int(tri[2])]
+            v1_str = f"#{int(tri[0]) + 1} ({p1.id})"
+            v2_str = f"#{int(tri[1]) + 1} ({p2.id})"
+            v3_str = f"#{int(tri[2]) + 1} ({p3.id})"
+
+            # Площадь 2D
+            area_2d = 0.5 * abs((p2.y - p1.y) * (p3.x - p1.x) - (p3.y - p1.y) * (p2.x - p1.x))
+            if not is_excluded:
+                active_count += 1
+                total_area += area_2d
+
+            self.tree.insert("", tk.END, iid=str(i), values=(
+                i + 1, v1_str, v2_str, v3_str, f"{area_2d:.2f}", status
+            ))
+
+        self.lbl_stats.configure(
+            text=f"Всего треугольников: {total_triangles} | Активных: {active_count} | Исключено: {len(self.excluded_set)} | Площадь: {total_area:.1f} м²"
+        )
+
+    def _on_double_click(self, event):
+        item = self.tree.identify_row(event.y)
+        if item:
+            idx = int(item)
+            self._toggle_triangle_status(idx)
+
+    def _toggle_selected(self):
+        sel = self.tree.selection()
+        if sel:
+            for item in sel:
+                self._toggle_triangle_status(int(item))
+
+    def _toggle_triangle_status(self, idx: int):
+        if idx in self.excluded_set:
+            self.excluded_set.remove(idx)
+        else:
+            self.excluded_set.add(idx)
+
+        if self.on_toggle_callback:
+            self.on_toggle_callback(idx, idx not in self.excluded_set)
+        elif self.app and hasattr(self.app, "_toggle_tin_simplex"):
+            self.app._toggle_tin_simplex(idx)
+
+        self._populate_table()
+        if self.tree.exists(str(idx)):
+            self.tree.selection_set(str(idx))
+            self.tree.focus(str(idx))
+
+    def _enable_all(self):
+        if not self.excluded_set:
+            return
+        to_enable = list(self.excluded_set)
+        self.excluded_set.clear()
+        for idx in to_enable:
+            if self.on_toggle_callback:
+                self.on_toggle_callback(idx, True)
+            elif self.app and hasattr(self.app, "_toggle_tin_simplex"):
+                self.app._tin_excluded.discard(idx)
+        if self.app:
+            self.app._tin_dirty = True
+            if hasattr(self.app, "_redraw_tin"):
+                self.app._redraw_tin()
+            if hasattr(self.app, "calculate_volume") and len(getattr(self.app, "boundary_indices", [])) >= 3:
+                self.app.calculate_volume()
+        self._populate_table()

@@ -93,6 +93,7 @@ from ui_dialogs import (
     QuickAddPointDialog,
     FullScreen3DViewer,
     calc_3d_stride,
+    TINTableDialog,
 )
 
 # Кастомная палитра: благородный темно-серый / графит вместо ярко-синего
@@ -247,7 +248,7 @@ except ImportError:
 
 from geo_parser import GeoPoint, load_points_from_file, parse_line
 from app_utils import get_app_dir, get_projects_dir, __version__, APP_NAME, APP_TITLE
-from spatial_index import SpatialIndexService
+from spatial_index import SpatialIndexService, polygon_self_intersects
 from project_storage import ProjectStorageService, NumpyJSONEncoder
 
 # Вспомогательные диалоги (PointEditDialog, CoordinateRemapDialog, QuickAddPointDialog, FullScreen3DViewer)
@@ -902,7 +903,7 @@ class VolumeApp(_AppBase):
             pass
 
         try:
-            ax.tick_params(colors=fg_col, which="both")
+            ax.tick_params(colors=fg_col, which="both", labelsize=10)
             spines = getattr(ax, "spines", {})
             if isinstance(spines, dict):
                 for spine in spines.values():
@@ -1517,7 +1518,6 @@ class VolumeApp(_AppBase):
 
         self.fig_2d = Figure(figsize=(6, 5), dpi=100)
         self.ax_2d = self.fig_2d.add_subplot(111)
-        self.ax_2d.set_title("Схема расположения точек (X - Север, Y - Восток)", loc="left", pad=12, color=title_color)
         self.ax_2d.set_xlabel("Восток Y (м)", color=title_color)
         self.ax_2d.set_ylabel("Север X (м)", color=title_color)
         self.ax_2d.grid(True, linestyle="--", alpha=0.5)
@@ -1591,6 +1591,19 @@ class VolumeApp(_AppBase):
             command=lambda: self._batch_assign_surface("top")
         )
         self.btn_sel_top.pack(side=tk.LEFT, padx=(0, 4), pady=3)
+
+        self.btn_sel_contour = ctk.CTkButton(
+            self.frame_selection_bar,
+            text="⬡ В контур",
+            width=0,
+            height=24,
+            fg_color="#27ae60",
+            hover_color="#1e8449",
+            text_color="#ffffff",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            command=self._build_boundary_from_selected_points
+        )
+        self.btn_sel_contour.pack(side=tk.LEFT, padx=(0, 4), pady=3)
 
         self.btn_sel_delete = ctk.CTkButton(
             self.frame_selection_bar,
@@ -2180,9 +2193,9 @@ class VolumeApp(_AppBase):
                       command=self._tin_toggle_selected).pack(side=tk.LEFT, padx=(0, 3))
         ctk.CTkButton(top_bar, text="↩ Сброс", width=0, height=24, font=ctk.CTkFont(size=11),
                       command=self._tin_reset).pack(side=tk.LEFT, padx=(0, 3))
-        self.btn_toggle_tin_table = ctk.CTkButton(top_bar, text="▲ Список", width=0, height=24, font=ctk.CTkFont(size=11),
-                                                   command=self._toggle_tin_table)
-        self.btn_toggle_tin_table.pack(side=tk.LEFT, padx=(0, 3))
+        ctk.CTkButton(top_bar, text="📊 Таблица", width=0, height=24, font=ctk.CTkFont(size=11),
+                      command=self._open_tin_table_dialog).pack(side=tk.LEFT, padx=(0, 3))
+        self.btn_toggle_tin_table = None
         ctk.CTkButton(top_bar, text="🔄 Делоне", width=0, height=24, font=ctk.CTkFont(size=11),
                       command=self._tin_reset_to_delaunay).pack(side=tk.LEFT, padx=(0, 4))
 
@@ -2390,15 +2403,23 @@ class VolumeApp(_AppBase):
 
         self.cbo_projects.configure(values=folder_names)
 
-        # Если есть проекты и ничего не выбрано — выбираем первый
+        # Если есть проекты и ничего не выбрано — выбираем проект и автоматически загружаем его
         if folder_names:
             cur_sel = self.cbo_projects.get()
             if not cur_sel or cur_sel not in folder_names:
-                first_proj = folder_names[0]
-                self.cbo_projects.set(first_proj)
-                if first_proj in self._project_folders:
-                    self._update_files_combobox_for_project(self._project_folders[first_proj])
-                self.after(50, lambda p=first_proj: self._on_cbo_project_selected(p))
+                last_proj = self._get_last_active_project_name()
+                if last_proj and last_proj in folder_names:
+                    target_proj = last_proj
+                else:
+                    try:
+                        target_proj = max(folder_names, key=lambda fn: os.path.getmtime(self._project_folders[fn]))
+                    except Exception:
+                        target_proj = folder_names[0]
+
+                self.cbo_projects.set(target_proj)
+                if target_proj in self._project_folders:
+                    self._update_files_combobox_for_project(self._project_folders[target_proj])
+                self.after(50, lambda p=target_proj: self._on_cbo_project_selected(p))
             else:
                 self._update_files_combobox_for_project(self._project_folders[cur_sel])
         else:
@@ -2717,6 +2738,73 @@ class VolumeApp(_AppBase):
 
         return ProjectStorageService.save_project_file(proj_path, data)
 
+    def _reset_all_caches_for_new_project(self):
+        """Полный сброс всех кешей, триангуляций и состояний при переключении или загрузке нового проекта"""
+        self.calc_results = None
+        self._selected_points.clear()
+        self._undo_stack.clear()
+        self._invalidate_boundary_cache()
+        self._boundary_interpolator_cache = None
+        self._boundary_path_cache = None
+        self._boundary_inside_cache = None
+        self._split_height_cache = None
+        self._work_type_cache = None
+        self._point_surfaces_cache = None
+        self._local_surface_threshold = None
+        self._spatial_service = None
+        self._points_kdtree = None
+        self._points_coords_len = 0
+        self._tin_excluded = set()
+        self._tin_custom_simplices = None
+        self._tin_simplices = None
+        self._tin_pts_2d = None
+        self._tin_selected_idx = None
+        self._tin_patches = []
+        self._tin_view_initialized = False
+        self._tin_dirty = True
+        self._table_dirty = True
+        self._3d_dirty = True
+        self._diff_dirty = True
+        self._2d_dirty = True
+
+    def _get_app_config_path(self):
+        app_data = os.environ.get("LOCALAPPDATA") or get_app_dir()
+        cfg_dir = os.path.join(app_data, "GeoVolumePro")
+        try:
+            os.makedirs(cfg_dir, exist_ok=True)
+        except Exception:
+            cfg_dir = get_app_dir()
+        return os.path.join(cfg_dir, "app_config.json")
+
+    def _get_last_active_project_name(self) -> str:
+        try:
+            cfg_p = self._get_app_config_path()
+            if os.path.exists(cfg_p):
+                with open(cfg_p, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+                    return cfg.get("last_project", "")
+        except Exception:
+            pass
+        return ""
+
+    def _save_last_active_project_name(self, proj_name: str):
+        if not proj_name or "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST"):
+            return
+        try:
+            cfg_p = self._get_app_config_path()
+            cfg = {}
+            if os.path.exists(cfg_p):
+                try:
+                    with open(cfg_p, "r", encoding="utf-8") as f:
+                        cfg = json.load(f)
+                except Exception:
+                    cfg = {}
+            cfg["last_project"] = proj_name
+            with open(cfg_p, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
     def load_project_from_folder(self, folder_path: str):
         """Загружает проект из указанной папки Projects/<Name>/"""
         self._current_project_dir = folder_path
@@ -2784,27 +2872,38 @@ class VolumeApp(_AppBase):
                     )
                 )
 
+            self._reset_all_caches_for_new_project()
             self.points = pts
-            self.calc_results = None
             self._is_separate_surfaces = bool(data.get("is_separate_surfaces", False))
             raw_bounds = data.get("boundary_indices", [])
             self.boundary_indices = [int(i) for i in raw_bounds if 0 <= int(i) < len(self.points)]
             self._tin_excluded = set(int(i) for i in data.get("tin_excluded", []))
+
+            n_pts = len(self.points)
             raw_simplices = data.get("tin_simplices", [])
             has_custom = data.get("has_custom_tin", False)
-            if has_custom and raw_simplices:
-                self._tin_custom_simplices = [tuple(int(v) for v in s) for s in raw_simplices]
+            valid_simplices = []
+            if raw_simplices:
+                for s in raw_simplices:
+                    if len(s) == 3 and all(0 <= int(v) < n_pts for v in s):
+                        valid_simplices.append([int(v) for v in s])
+
+            if has_custom and valid_simplices and len(valid_simplices) > 0:
+                self._tin_custom_simplices = [tuple(s) for s in valid_simplices]
+                self._tin_simplices = np.array(valid_simplices, dtype=int)
+                self._tin_dirty = False
             else:
                 self._tin_custom_simplices = None
+                self._tin_simplices = None
+                self._tin_dirty = True
+
             self._current_file_path = source_path
+            self._save_last_active_project_name(os.path.basename(folder_path))
 
             proj_display = os.path.basename(folder_path)
             self.lbl_file_info.configure(
                 text=f"{proj_display} ({len(self.points)} точек) [сохранён]"
             )
-            self._selected_points.clear()
-            self._invalidate_boundary_cache()
-            self._undo_stack.clear()
             self._update_all_views(reset_view=True)
 
             # Авто-расчёт и переход на схему в плане при загрузке/смене проекта
@@ -2840,6 +2939,12 @@ class VolumeApp(_AppBase):
                 messagebox.showerror("Ошибка", f"Не удалось удалить проект:\n{str(e)}")
 
     def _on_closing(self):
+        if "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST"):
+            try:
+                self.destroy()
+            except Exception:
+                pass
+            return
         try:
             if getattr(self, "_auto_save_timer", None) is not None:
                 try:
@@ -2924,17 +3029,12 @@ class VolumeApp(_AppBase):
                     f"В файле {os.path.basename(filepath)} не удалось распознать координаты с выбранными колонками."
                 )
                 return
+        self._reset_all_caches_for_new_project()
         self.points = pts
-        self.calc_results = None
         self._is_separate_surfaces = False
         proj_display = os.path.basename(self._current_project_dir) if self._current_project_dir else os.path.basename(filepath)
         self.lbl_file_info.configure(text=f"{proj_display} ({len(pts)} точек)")
         self.boundary_indices = []
-        self._selected_points.clear()
-        self._invalidate_boundary_cache()
-        self._undo_stack.clear()
-        self._tin_excluded.clear()
-        self._tin_custom_simplices = None
         self._auto_classify_initial()
         self._update_all_views(reset_view=True)
         self.save_project_state(filepath)
@@ -3212,7 +3312,14 @@ class VolumeApp(_AppBase):
         return idx, dist
 
     def _get_click_tolerance(self) -> float:
-        return SpatialIndexService.get_click_tolerance(self.ax_2d.get_xlim(), self.ax_2d.get_ylim())
+        try:
+            xlim = self.ax_2d.get_xlim()
+            ylim = self.ax_2d.get_ylim()
+            if isinstance(xlim[0], (int, float)) and isinstance(ylim[0], (int, float)):
+                return SpatialIndexService.get_click_tolerance(xlim, ylim)
+        except Exception:
+            pass
+        return 1.0
 
     def _find_nearest_boundary_edge(self, pt_idx: int) -> int:
         """
@@ -3301,18 +3408,60 @@ class VolumeApp(_AppBase):
         N = len(self.boundary_indices)
         if N < 2:
             insert_pos = N
-            self.boundary_indices.append(min_idx)
         elif N == 2:
             insert_pos = 1
-            self.boundary_indices.insert(1, min_idx)
         else:
-            best_k = self._find_nearest_boundary_edge(min_idx)
+            service = self._get_spatial_service()
+            best_k, edge_dist = service.find_nearest_boundary_edge_with_dist(min_idx, self.boundary_indices)
             insert_pos = best_k + 1
+
+            # 1. Проверка на нахождение внутри контура и контроль перепада высот
+            path = self._get_boundary_path()
+            pt = self.points[min_idx]
+            tol = self._get_click_tolerance()
+            is_inside = (path is not None and path.contains_point((pt.x, pt.y)))
+
+            p_edge1 = self.points[self.boundary_indices[best_k]]
+            p_edge2 = self.points[self.boundary_indices[(best_k + 1) % N]]
+            mean_edge_h = 0.5 * (p_edge1.h + p_edge2.h)
+            delta_h = pt.h - mean_edge_h
+
+            if (is_inside and edge_dist > max(0.4, tol * 0.5)) or abs(delta_h) > 1.0:
+                h_diff_str = f"+{delta_h:.2f}" if delta_h > 0 else f"{delta_h:.2f}"
+                confirm_msg = (
+                    f"Точка #{min_idx + 1} (ID: {pt.id}, H: {pt.h:.3f} м) "
+                    + ("находится внутри текущего контура" if is_inside else "расположена рядом с контуром")
+                    + f" (отклонение от ребра {edge_dist:.1f} м, перепад высоты {h_diff_str} м относительно подошвы).\n\n"
+                    "Встраивание этой точки во внешний контур изменит геометрию подошвы "
+                    "и плоскость основания (дна), что повлияет на расчёт объёма.\n\n"
+                    "Вы действительно хотите добавить эту точку в контур сшивания?"
+                )
+                if not messagebox.askyesno("Встраивание точки в контур", confirm_msg, parent=self):
+                    return
+
+            # 2. Проверка на геометрическое самопересечение (петли контура)
+            trial_indices = self.boundary_indices[:insert_pos] + [min_idx] + self.boundary_indices[insert_pos:]
+            trial_coords = np.array([[self.points[i].x, self.points[i].y] for i in trial_indices], dtype=float)
+            if polygon_self_intersects(trial_coords):
+                messagebox.showwarning(
+                    "Самопересечение контура",
+                    "Добавление данной точки в выбранное ребро приводит к самопересечению линий границы (петле).\n\n"
+                    "Контур сшивания должен оставаться простым многоугольником без самопересечений.",
+                    parent=self
+                )
+                return
+
+        old_type = self.points[min_idx].surface_type
+        self.points[min_idx].surface_type = "boundary"
+        if N < 2:
+            self.boundary_indices.append(min_idx)
+        else:
             self.boundary_indices.insert(insert_pos, min_idx)
 
-        self._undo_stack.append(("boundary_insert", insert_pos, min_idx))
+        self._undo_stack.append(("boundary_insert", insert_pos, min_idx, old_type))
         self._invalidate_boundary_cache()
         self._update_2d_contour_only()
+        self._redraw_2d()
         self._table_dirty = True
         self._tin_dirty = True
         self._schedule_auto_save()
@@ -3674,10 +3823,14 @@ class VolumeApp(_AppBase):
                 # Если курсор отпущен над свободной точкой
                 if target_idx is not None and 0 <= target_idx < len(self.points) and target_idx not in self.boundary_indices:
                     old_idx = source_idx
+                    old_type_target = self.points[target_idx].surface_type
+                    old_type_old = self.points[old_idx].surface_type
                     self.boundary_indices[pos] = target_idx
-                    self._undo_stack.append(("boundary_replace", pos, old_idx, target_idx))
+                    self.points[target_idx].surface_type = "boundary"
+                    self.points[old_idx].surface_type = "auto"
+                    self._undo_stack.append(("boundary_replace", pos, old_idx, target_idx, old_type_target, old_type_old))
                     self._invalidate_boundary_cache()
-                    self._update_2d_contour_only()
+                    self._redraw_2d()
                     self._table_dirty = True
                     self._tin_dirty = True
                     self._schedule_auto_save()
@@ -3697,12 +3850,15 @@ class VolumeApp(_AppBase):
                     self._show_point_context_menu(pt_idx, event)
                 return
 
-        # Нажатие ПКМ на любой другой точке (не в контуре)
+        # Нажатие ПКМ на любой другой точке (не в контуре) или на пустом месте при наличии выделения
         if getattr(event, "button", None) == 3:
             pt_idx = self.__dict__.get("_rclick_point_idx", None)
             self._rclick_point_idx = None
             if pt_idx is not None and 0 <= pt_idx < len(self.points):
                 self._show_point_context_menu(pt_idx, event)
+            elif getattr(self, "_selected_points", None):
+                first_sel = next(iter(self._selected_points))
+                self._show_point_context_menu(first_sel, event)
             return
 
         # 2. Обработка ЛКМ (кнопка 1)
@@ -3812,13 +3968,53 @@ class VolumeApp(_AppBase):
 
         elif mode in ("select_boundary", "auto_hull"):
             if min_idx not in self.boundary_indices:
+                if len(self.boundary_indices) >= 3:
+                    path = self._get_boundary_path()
+                    pt = self.points[min_idx]
+                    tol = self._get_click_tolerance()
+                    is_inside = (path is not None and path.contains_point((pt.x, pt.y)))
+                    service = self._get_spatial_service()
+                    best_k, edge_dist = service.find_nearest_boundary_edge_with_dist(min_idx, self.boundary_indices)
+                    p_edge1 = self.points[self.boundary_indices[best_k]]
+                    p_edge2 = self.points[self.boundary_indices[(best_k + 1) % len(self.boundary_indices)]]
+                    mean_edge_h = 0.5 * (p_edge1.h + p_edge2.h)
+                    delta_h = pt.h - mean_edge_h
+
+                    if (is_inside and edge_dist > max(0.4, tol * 0.5)) or abs(delta_h) > 1.0:
+                        h_diff_str = f"+{delta_h:.2f}" if delta_h > 0 else f"{delta_h:.2f}"
+                        confirm_msg = (
+                            f"Точка #{min_idx + 1} (ID: {pt.id}, H: {pt.h:.3f} м) "
+                            + ("находится внутри текущего контура" if is_inside else "расположена рядом с контуром")
+                            + f" (отклонение от ребра {edge_dist:.1f} м, перепад высоты {h_diff_str} м относительно подошвы).\n\n"
+                            "Встраивание этой точки во внешний контур изменит геометрию подошвы "
+                            "и плоскость основания (дна), что повлияет на расчёт объёма.\n\n"
+                            "Вы действительно хотите добавить эту точку в контур сшивания?"
+                        )
+                        if not messagebox.askyesno("Добавление точки в контур", confirm_msg, parent=self):
+                            return
+
+                    trial_indices = self.boundary_indices + [min_idx]
+                    trial_coords = np.array([[self.points[i].x, self.points[i].y] for i in trial_indices], dtype=float)
+                    if polygon_self_intersects(trial_coords):
+                        messagebox.showwarning(
+                            "Самопересечение контура",
+                            "Добавление данной точки приводит к самопересечению линий границы (петле).\n\n"
+                            "Контур сшивания должен оставаться простым многоугольником без самопересечений.",
+                            parent=self
+                        )
+                        return
+
+                old_type = self.points[min_idx].surface_type
+                self.points[min_idx].surface_type = "boundary"
                 self.boundary_indices.append(min_idx)
-                self._undo_stack.append(("boundary_add", min_idx))
+                self._undo_stack.append(("boundary_add", min_idx, old_type))
             else:
+                old_type = self.points[min_idx].surface_type
                 self.boundary_indices.remove(min_idx)
-                self._undo_stack.append(("boundary_remove", min_idx))
+                self.points[min_idx].surface_type = "auto"
+                self._undo_stack.append(("boundary_remove", min_idx, old_type))
             self._invalidate_boundary_cache()
-            self._update_2d_contour_only()
+            self._redraw_2d()
             self._table_dirty = True
             self._tin_dirty = True
             self._schedule_auto_save()
@@ -3841,25 +4037,48 @@ class VolumeApp(_AppBase):
 
         if action[0] == "boundary_add":
             idx = action[1]
+            old_type = action[2] if len(action) > 2 else "auto"
             if idx in self.boundary_indices:
                 self.boundary_indices.remove(idx)
+            if 0 <= idx < len(self.points):
+                self.points[idx].surface_type = old_type
             self._invalidate_boundary_cache()
         elif action[0] == "boundary_remove":
             idx = action[1]
+            old_type = action[2] if len(action) > 2 else "boundary"
             if idx not in self.boundary_indices:
                 self.boundary_indices.append(idx)
+            if 0 <= idx < len(self.points):
+                self.points[idx].surface_type = old_type
             self._invalidate_boundary_cache()
         elif action[0] == "boundary_insert":
             pos, idx = action[1], action[2]
+            old_type = action[3] if len(action) > 3 else "auto"
             if 0 <= pos < len(self.boundary_indices) and self.boundary_indices[pos] == idx:
                 self.boundary_indices.pop(pos)
             elif idx in self.boundary_indices:
                 self.boundary_indices.remove(idx)
+            if 0 <= idx < len(self.points):
+                self.points[idx].surface_type = old_type
             self._invalidate_boundary_cache()
         elif action[0] == "boundary_replace":
             pos, old_idx, new_idx = action[1], action[2], action[3]
+            old_type_new = action[4] if len(action) > 4 else "auto"
+            old_type_old = action[5] if len(action) > 5 else "boundary"
             if 0 <= pos < len(self.boundary_indices) and self.boundary_indices[pos] == new_idx:
                 self.boundary_indices[pos] = old_idx
+            if 0 <= new_idx < len(self.points):
+                self.points[new_idx].surface_type = old_type_new
+            if 0 <= old_idx < len(self.points):
+                self.points[old_idx].surface_type = old_type_old
+            self._invalidate_boundary_cache()
+        elif action[0] == "boundary_set":
+            old_boundary = action[1]
+            old_surfaces = action[2]
+            self.boundary_indices = list(old_boundary)
+            for i, st in enumerate(old_surfaces):
+                if 0 <= i < len(self.points):
+                    self.points[i].surface_type = st
             self._invalidate_boundary_cache()
         elif action[0] == "assign":
             idx = action[1]
@@ -3918,18 +4137,18 @@ class VolumeApp(_AppBase):
                 self._tin_custom_simplices = [tuple(s) for s in simplices_list]
             self.lbl_tin_stats.configure(text="↩ Авто-оптимизация отменена")
 
-        current_tab = self.tabview.get() if hasattr(self, "tabview") else None
-        if action[0] in ("boundary_add", "boundary_remove", "boundary_insert", "boundary_replace"):
-            self._update_2d_contour_only()
-        else:
-            self._redraw_2d()
-        if current_tab == self.TAB_TABLE:
+        tv = self.__dict__.get("tabview", None)
+        current_tab = tv.get() if tv is not None else None
+        self._redraw_2d()
+        tab_table = getattr(self, "TAB_TABLE", "Таблица точек")
+        tab_tin = getattr(self, "TAB_TIN", "Триангуляция TIN")
+        if current_tab == tab_table:
             self._update_table()
             self._table_dirty = False
         else:
             self._table_dirty = True
 
-        if current_tab == self.TAB_TIN:
+        if current_tab == tab_tin:
             self._redraw_tin(reset_view=False)
             self._tin_dirty = False
         else:
@@ -3937,7 +4156,7 @@ class VolumeApp(_AppBase):
 
         self._schedule_auto_save()
         # Пересчёт объёма после отмены изменений контура или поверхностей
-        if action[0] in ("boundary_add", "boundary_remove", "boundary_insert", "boundary_replace", "assign", "batch_assign") and len(self.boundary_indices) >= 3:
+        if action[0] in ("boundary_add", "boundary_remove", "boundary_insert", "boundary_replace", "boundary_set", "assign", "batch_assign") and len(self.boundary_indices) >= 3:
             self._suppress_tab_switch = True
             self._schedule_boundary_calc(400)
 
@@ -3994,6 +4213,66 @@ class VolumeApp(_AppBase):
         self._selected_points.clear()
         self._update_2d_selection_only()
         self._update_selection_bar()
+
+    def _build_boundary_from_selected_points(self):
+        """Строит контур сшивания (Convex Hull) вокруг группы выделенных точек"""
+        if len(getattr(self, "boundary_indices", [])) >= 3:
+            messagebox.showwarning(
+                "Контур сшивания",
+                "Контур сшивания уже существует.\nЧтобы построить новый контур вокруг выделенных точек, сначала сбросьте текущий контур (кнопка 'Сброс контура')."
+            )
+            return
+
+        sel = getattr(self, "_selected_points", set())
+        if len(sel) < 3:
+            messagebox.showwarning(
+                "Контур сшивания",
+                "Для построения контура сшивания необходимо выделить как минимум 3 точки."
+            )
+            return
+
+        sel_indices = [idx for idx in sel if 0 <= idx < len(self.points)]
+        if len(sel_indices) < 3:
+            messagebox.showwarning(
+                "Контур сшивания",
+                "Для построения контура сшивания необходимо выделить как минимум 3 точки."
+            )
+            return
+
+        pts_coords = np.array([[self.points[i].x, self.points[i].y] for i in sel_indices])
+
+        try:
+            from scipy.spatial import ConvexHull
+            hull = ConvexHull(pts_coords)
+            boundary_idx = [sel_indices[v] for v in hull.vertices]
+        except Exception as ex:
+            messagebox.showerror(
+                "Ошибка построения контура",
+                f"Не удалось построить контур вокруг выделенных точек:\n{ex}"
+            )
+            return
+
+        old_boundary = list(self.boundary_indices)
+        old_surfaces = [p.surface_type for p in self.points]
+        self._undo_stack.append(("boundary_set", old_boundary, old_surfaces))
+
+        self.boundary_indices = boundary_idx
+        for idx in self.boundary_indices:
+            self.points[idx].surface_type = "boundary"
+
+        self._tin_excluded.clear()
+        self._tin_custom_simplices = None
+        self._tin_dirty = True
+        self._invalidate_boundary_cache()
+
+        self._selected_points.clear()
+        self._update_selection_bar()
+        self._update_all_views()
+        self._schedule_auto_save()
+
+        if len(self.boundary_indices) >= 3:
+            self._suppress_tab_switch = True
+            self._schedule_boundary_calc(400)
 
     def _assign_point_surface(self, target_idx: int, target_surf: str, toggle_same: bool = False):
         """Назначает целевую поверхность для точки (или выделенной группы точек).
@@ -4140,10 +4419,11 @@ class VolumeApp(_AppBase):
         menu.add_command(label=hdr_text, state=tk.DISABLED)
         menu.add_separator()
 
-        lbl_top = f"перенести в верхнюю поверхность ({num_sel} т.)" if is_multi else "перенести в верхнюю поверхность"
-        lbl_bot = f"перенести в нижнюю поверхность ({num_sel} т.)" if is_multi else "перенести в нижнюю поверхность"
-        lbl_auto = f"сбросить в авто-определение ({num_sel} т.)" if is_multi else "сбросить в авто-определение"
-        lbl_del = f"удалить ({num_sel} т.)" if is_multi else "удалить"
+        lbl_top = f"Перенести в верхнюю поверхность ({num_sel} т.)" if is_multi else "Перенести в верхнюю поверхность"
+        lbl_bot = f"Перенести в нижнюю поверхность ({num_sel} т.)" if is_multi else "Перенести в нижнюю поверхность"
+        lbl_auto = f"Сбросить в авто-определение ({num_sel} т.)" if is_multi else "Сбросить в авто-определение"
+        lbl_bound = f"⬡ Построить контур вокруг выделенных ({num_sel} т.)" if is_multi else "⬡ Построить контур сшивания"
+        lbl_del = f"Удалить ({num_sel} т.)" if is_multi else "Удалить"
 
         menu.add_command(
             label=lbl_top,
@@ -4157,13 +4437,17 @@ class VolumeApp(_AppBase):
             label=lbl_auto,
             command=lambda: self._assign_point_surface(pt_idx, "auto")
         )
+        menu.add_command(
+            label=lbl_bound,
+            command=self._build_boundary_from_selected_points
+        )
         menu.add_separator()
         menu.add_command(
             label=lbl_del,
             command=lambda: self._delete_point(pt_idx)
         )
         menu.add_separator()
-        lbl_cancel = f"отмена (снять выделение {num_sel} т.)" if is_multi else "отмена (снять выделение)"
+        lbl_cancel = f"Отмена (снять выделение {num_sel} т.)" if is_multi else "Отмена (снять выделение)"
         menu.add_command(
             label=lbl_cancel,
             command=self._clear_selected_points
@@ -4321,6 +4605,24 @@ class VolumeApp(_AppBase):
                 )
             else:
                 res = calc.calculate()
+
+            if "error" in res and self._tin_simplices is not None:
+                # Если сохраненная или кастомная триангуляция не подошла,
+                # автоматически перестраиваем стандартную триангуляцию Делоне заново и повторяем
+                self._tin_custom_simplices = None
+                self._tin_simplices = None
+                self._tin_dirty = True
+                self._rebuild_tin()
+                if self._tin_simplices is not None and len(self._tin_simplices) > 0:
+                    res = calc.calculate_with_custom_tin(
+                        pts_2d=self._tin_pts_2d if self._tin_pts_2d is not None else pts_3d[:, :2],
+                        simplices=self._tin_simplices,
+                        excluded_simplex_indices=self._tin_excluded,
+                        pts_3d=pts_3d,
+                        tin_surface=tin_surface_param
+                    )
+                if "error" in res:
+                    res = calc.calculate()
 
             if "error" in res:
                 if not silent:
@@ -4925,7 +5227,6 @@ class VolumeApp(_AppBase):
         self.ax_2d.clear()
         is_dark = (ctk.get_appearance_mode() == "Dark") if hasattr(ctk, "get_appearance_mode") else False
         title_color = "#e0e0e0" if is_dark else "#212529"
-        self.ax_2d.set_title("Схема в плане (X - Север, Y - Восток)", loc="left", pad=12, color=title_color)
         self.ax_2d.set_xlabel("Восток Y (м)", color=title_color)
         self.ax_2d.set_ylabel("Север X (м)", color=title_color)
         self._apply_axes_theme(self.ax_2d, self.fig_2d, is_dark)
@@ -4992,14 +5293,14 @@ class VolumeApp(_AppBase):
         show_bound_labels = (show_top and show_bottom) or (is_cut and show_top) or (not is_cut and show_bottom)
         if show_bound_labels and len(self.boundary_indices) >= 2:
             is_dark = (ctk.get_appearance_mode() == "Dark") if hasattr(ctk, "get_appearance_mode") else False
-            order_col = "#00e676" if is_dark else "#006600"
+            order_col = "#00e676" if is_dark else "#004d00"
             for order, idx in enumerate(self.boundary_indices):
                 if 0 <= idx < len(self.points):
                     pt = self.points[idx]
                     ann = self.ax_2d.annotate(
                         f"#{order+1}", (pt.y, pt.x),
                         textcoords="offset points", xytext=(-12, -12),
-                        fontsize=8, fontweight="bold", color=order_col,
+                        fontsize=9, fontweight="bold", color=order_col,
                         zorder=5, clip_on=True
                     )
                     self._contour_order_artists.append(ann)
@@ -5193,13 +5494,15 @@ class VolumeApp(_AppBase):
         show_bound_labels = (show_top and show_bottom) or (is_cut and show_top) or (not is_cut and show_bottom)
 
         if show_bound_labels and len(self.boundary_indices) >= 2:
+            is_dark = (ctk.get_appearance_mode() == "Dark") if hasattr(ctk, "get_appearance_mode") else False
+            order_col = "#00e676" if is_dark else "#004d00"
             for order, idx in enumerate(self.boundary_indices):
                 if 0 <= idx < len(self.points):
                     pt = self.points[idx]
                     ann = self.ax_2d.annotate(
                         f"#{order+1}", (pt.y, pt.x),
                         textcoords="offset points", xytext=(-12, -12),
-                        fontsize=8, fontweight="bold", color="#006600",
+                        fontsize=9, fontweight="bold", color=order_col,
                         zorder=5, clip_on=True
                     )
                     self._contour_order_artists.append(ann)
@@ -6490,16 +6793,24 @@ class VolumeApp(_AppBase):
             self._fit_tin_view()
         self._tin_dirty = False
 
+    def _open_tin_table_dialog(self):
+        """Открывает отдельное диалоговое окно со списком всех треугольников TIN"""
+        if self._tin_simplices is None or len(self._tin_simplices) == 0:
+            self._rebuild_tin()
+        TINTableDialog(self, app=self)
+
     def _toggle_tin_table(self):
         """Скрытие / отображение таблицы треугольников для максимизации области схемы TIN"""
         if getattr(self, "_tin_table_visible", True):
             self.paned_tin.forget(self._tin_bottom_frame)
             self._tin_table_visible = False
-            self.btn_toggle_tin_table.configure(text="▼ Список")
+            if getattr(self, "btn_toggle_tin_table", None):
+                self.btn_toggle_tin_table.configure(text="▼ Список")
         else:
             self.paned_tin.add(self._tin_bottom_frame, weight=1)
             self._tin_table_visible = True
-            self.btn_toggle_tin_table.configure(text="▲ Список")
+            if getattr(self, "btn_toggle_tin_table", None):
+                self.btn_toggle_tin_table.configure(text="▲ Список")
 
     def _fit_tin_view(self):
         """Устанавливает масштаб и границы ax_tin точно в фокус отображаемых данных"""
