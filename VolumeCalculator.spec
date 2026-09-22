@@ -76,5 +76,6 @@ coll = COLLECT(
 
 # Копируем readme.html и app_icon.ico в корень дистрибутива рядом с exe (все ресурсы и иконки находятся в _internal)
 _dist_root = os.path.join(DISTPATH, 'GeoVolumePro')
+os.makedirs(_dist_root, exist_ok=True)
 shutil.copy('readme.html', os.path.join(_dist_root, 'readme.html'))
 shutil.copy('app_icon.ico', os.path.join(_dist_root, 'app_icon.ico'))
