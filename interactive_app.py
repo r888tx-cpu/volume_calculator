@@ -94,6 +94,8 @@ from ui_dialogs import (
     FullScreen3DViewer,
     calc_3d_stride,
     TINTableDialog,
+    ToolTip,
+    add_tooltip,
 )
 
 # Кастомная палитра: благородный темно-серый / графит вместо ярко-синего
@@ -504,6 +506,7 @@ class VolumeApp(_AppBase):
             command=self._toggle_app_theme
         )
         self.btn_theme_toggle_left.pack(side=tk.RIGHT, fill=tk.X, expand=True)
+        add_tooltip(self.btn_theme_toggle_left, "Переключить тему оформления (Тёмная / Светлая)")
 
         # Внутренний scrollable контейнер для левой панели (гарантирует что всё влезет!)
         inner = ctk.CTkScrollableFrame(self.left_frame, fg_color="transparent")
@@ -540,34 +543,51 @@ class VolumeApp(_AppBase):
         self.cbo_projects = ctk.CTkComboBox(grp_load, values=[], height=26,
                                              command=self._on_cbo_project_selected)
         self.cbo_projects.pack(fill=tk.X, pady=(1, 2))
+        add_tooltip(self.cbo_projects, "Выбор сохраненного проекта из папки Projects")
 
         btn_box2 = ctk.CTkFrame(grp_load, fg_color="transparent")
         btn_box2.pack(fill=tk.X, pady=(0, 2))
-        ctk.CTkButton(btn_box2, text="Загрузить проект", width=0, height=24,
-                      command=self._load_selected_project_button).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
-        ctk.CTkButton(btn_box2, text="Удалить проект", width=0, height=24,
-                      fg_color="#8B2020", hover_color="#A02828",
-                      command=self._delete_selected_project).pack(side=tk.RIGHT, padx=(2, 0))
+        b_load = ctk.CTkButton(btn_box2, text="Загрузить проект", width=0, height=24,
+                               command=self._load_selected_project_button)
+        b_load.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
+        add_tooltip(b_load, "Загрузить выбранный проект со всеми файлами, контурами и настройками")
+
+        b_del = ctk.CTkButton(btn_box2, text="Удалить проект", width=0, height=24,
+                              fg_color="#8B2020", hover_color="#A02828",
+                              command=self._delete_selected_project)
+        b_del.pack(side=tk.RIGHT, padx=(2, 0))
+        add_tooltip(b_del, "Удалить выбранный проект и связанные данные")
 
         # Файлы координат
         ctk.CTkLabel(grp_load, text="Файл координат в проекте:", anchor="w", height=16).pack(fill=tk.X)
         self.cbo_files = ctk.CTkComboBox(grp_load, values=[], height=26,
                                           command=self._on_cbo_file_selected_cmd)
         self.cbo_files.pack(fill=tk.X, pady=(1, 2))
+        add_tooltip(self.cbo_files, "Выбор активного файла координат в текущем проекте")
 
         btn_box1 = ctk.CTkFrame(grp_load, fg_color="transparent")
         btn_box1.pack(fill=tk.X, pady=(0, 2))
-        ctk.CTkButton(btn_box1, text="Импорт файла...", width=0, height=24,
-                      command=self._open_file_dialog).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
-        ctk.CTkButton(btn_box1, text="Верх / Низ...", width=0, height=24,
-                      command=self._open_separate_files_dialog).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
-        ctk.CTkButton(btn_box1, text="⟳", width=30, height=24,
-                      command=self._scan_saved_projects).pack(side=tk.RIGHT)
+        b_imp = ctk.CTkButton(btn_box1, text="Импорт файла...", width=0, height=24,
+                              command=self._open_file_dialog)
+        b_imp.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
+        add_tooltip(b_imp, "Импортировать новый файл координат (TXT, CSV, DAT, XYZ, PTS) в проект")
+
+        b_sep = ctk.CTkButton(btn_box1, text="Верх / Низ...", width=0, height=24,
+                              command=self._open_separate_files_dialog)
+        b_sep.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
+        add_tooltip(b_sep, "Импортировать две раздельные съемки для верхней и нижней поверхностей")
+
+        b_ref = ctk.CTkButton(btn_box1, text="⟳", width=30, height=24,
+                              command=self._scan_saved_projects)
+        b_ref.pack(side=tk.RIGHT)
+        add_tooltip(b_ref, "Обновить список проектов и файлов на диске")
 
         btn_box_remap = ctk.CTkFrame(grp_load, fg_color="transparent")
         btn_box_remap.pack(fill=tk.X, pady=(0, 1))
-        ctk.CTkButton(btn_box_remap, text="🔀 Настройка осей и колонок (X, Y, Z)...", width=0, height=24,
-                      command=self._open_remap_dialog).pack(fill=tk.X)
+        b_remap = ctk.CTkButton(btn_box_remap, text="🔀 Настройка осей и колонок (X, Y, Z)...", width=0, height=24,
+                                command=self._open_remap_dialog)
+        b_remap.pack(fill=tk.X)
+        add_tooltip(b_remap, "Настроить соответствие колонок файла: X (Север), Y (Восток), Z (Высота), Разделитель")
 
         self.lbl_file_info = ctk.CTkLabel(grp_load, text="Проект не загружен",
                                            text_color=("#52525b", "#a1a1aa"),
@@ -591,16 +611,25 @@ class VolumeApp(_AppBase):
                                          command=self._on_cbo_mode_selected_cmd)
         self.cbo_mode.set(_mode_values[0])
         self.cbo_mode.pack(fill=tk.X, pady=(1, 2))
+        add_tooltip(self.cbo_mode, "Выбор активного режима работы курсора на 2D схеме")
 
         btn_contour_box = ctk.CTkFrame(grp_contour, fg_color="transparent")
         btn_contour_box.pack(fill=tk.X, pady=(0, 1))
-        ctk.CTkButton(btn_contour_box, text="↩ Отмена", width=0, height=24,
-                      command=self._undo_last_action).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
-        ctk.CTkButton(btn_contour_box, text="Сброс", width=0, height=24,
-                      fg_color="gray40", hover_color="gray30",
-                      command=self._reset_boundary).pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
-        ctk.CTkButton(btn_contour_box, text="Авто-Z", width=0, height=24,
-                      command=self._auto_split_by_height).pack(side=tk.RIGHT, expand=True, fill=tk.X)
+        b_undo = ctk.CTkButton(btn_contour_box, text="↩ Отмена", width=0, height=24,
+                               command=self._undo_last_action)
+        b_undo.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
+        add_tooltip(b_undo, "Отменить последнее действие (контур, назначение поверхности)")
+
+        b_reset = ctk.CTkButton(btn_contour_box, text="Сброс", width=0, height=24,
+                                fg_color="gray40", hover_color="gray30",
+                                command=self._reset_boundary)
+        b_reset.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
+        add_tooltip(b_reset, "Сбросить текущий контур сшивания и вернуть автоматический режим")
+
+        b_split = ctk.CTkButton(btn_contour_box, text="Авто-Z", width=0, height=24,
+                                command=self._auto_split_by_height)
+        b_split.pack(side=tk.RIGHT, expand=True, fill=tk.X)
+        add_tooltip(b_split, "Автоматически разделить точки на верхнюю и нижнюю поверхности по перепаду высот")
 
         # Компактный блок статуса и действий с выделенными точками на боковой панели (отображается только при наличии выделенных точек)
         self.frame_sidebar_sel = ctk.CTkFrame(grp_contour, fg_color="transparent")
@@ -658,6 +687,10 @@ class VolumeApp(_AppBase):
             font=ctk.CTkFont(size=9),
             command=self._clear_selected_points
         )
+        add_tooltip(self.btn_side_sel_bot, "Назначить выделенные точки на нижнюю поверхность")
+        add_tooltip(self.btn_side_sel_top, "Назначить выделенные точки на верхнюю поверхность")
+        add_tooltip(self.btn_side_sel_del, "Удалить выделенные точки из проекта")
+        add_tooltip(self.btn_side_sel_clear, "Снять выделение со всех точек")
 
         self.lbl_contour_hint = ctk.CTkLabel(
             grp_contour,
@@ -678,10 +711,12 @@ class VolumeApp(_AppBase):
         self.ent_res = ctk.CTkEntry(res_box, width=54, height=24)
         self.ent_res.insert(0, "0.2")
         self.ent_res.pack(side=tk.LEFT, padx=(4, 6))
+        add_tooltip(self.ent_res, "Шаг регулярной расчетной сетки интерполяции в метрах (по умолчанию 0.2 м)")
 
         self.btn_run_calc = ctk.CTkButton(res_box, text="Расчет", width=0, height=24,
                                            command=self.calculate_volume)
         self.btn_run_calc.pack(side=tk.RIGHT, expand=True, fill=tk.X)
+        add_tooltip(self.btn_run_calc, "Запустить триангуляцию TIN, сеточный расчет и вычисление объемов")
 
         # === 4. Результаты расчета ===
         self.grp_results = ctk.CTkFrame(inner)
@@ -1102,6 +1137,7 @@ class VolumeApp(_AppBase):
             font=ctk.CTkFont(size=11, weight="bold"),
         )
         self.btn_readme.place(relx=1.0, y=6, anchor="ne", x=-52)
+        add_tooltip(self.btn_readme, "Открыть подробное иллюстрированное руководство пользователя (HTML)")
 
         # Переключатель темы: справа от «Справка (HTML)»
         self.btn_theme_toggle = ctk.CTkButton(
@@ -1119,6 +1155,7 @@ class VolumeApp(_AppBase):
             font=ctk.CTkFont(size=13, weight="bold"),
         )
         self.btn_theme_toggle.place(relx=1.0, y=6, anchor="ne", x=-8)
+        add_tooltip(self.btn_theme_toggle, "Переключить тему оформления (Тёмная / Светлая)")
 
         # Заменяем tabview.set на безопасный метод без задержек after(100), вызывающих скрытие вкладок
         self.tabview.set = self._select_tab
@@ -1303,6 +1340,7 @@ class VolumeApp(_AppBase):
             font=ctk.CTkFont(size=11, weight="bold"),
         )
         cb_top.pack(side=tk.LEFT, padx=(8, 6), pady=3)
+        add_tooltip(cb_top, "Показать или скрыть точки и рельеф верхней поверхности")
 
         cb_bot = ctk.CTkCheckBox(
             panel,
@@ -1317,6 +1355,7 @@ class VolumeApp(_AppBase):
             font=ctk.CTkFont(size=11, weight="bold"),
         )
         cb_bot.pack(side=tk.LEFT, padx=(4, 6), pady=3)
+        add_tooltip(cb_bot, "Показать или скрыть точки и рельеф нижней поверхности")
 
         if show_labels_btn:
             self.btn_labels_mode = ctk.CTkButton(
@@ -1333,6 +1372,7 @@ class VolumeApp(_AppBase):
                 command=self._toggle_labels_mode,
             )
             self.btn_labels_mode.pack(side=tk.LEFT, padx=(2, 6), pady=3)
+            add_tooltip(self.btn_labels_mode, "Режим подписей номеров и отметок точек (Все / Отключены)")
 
         return panel
 
@@ -1548,6 +1588,7 @@ class VolumeApp(_AppBase):
             font=ctk.CTkFont(size=11, weight="bold"),
         )
         cw_2d.bind("<Configure>", lambda e: self._position_reset_contour_button(), add="+")
+        add_tooltip(self.btn_reset_contour, "Сбросить текущий контур сшивания и вернуть автоматический режим")
 
         # Плавающая панель пакетного управления выделенными точками
         self.frame_selection_bar = ctk.CTkFrame(
@@ -1578,6 +1619,7 @@ class VolumeApp(_AppBase):
             command=lambda: self._batch_assign_surface("bottom")
         )
         self.btn_sel_bottom.pack(side=tk.LEFT, padx=(0, 4), pady=3)
+        add_tooltip(self.btn_sel_bottom, "Перенести все выделенные точки на нижнюю поверхность")
 
         self.btn_sel_top = ctk.CTkButton(
             self.frame_selection_bar,
@@ -1591,6 +1633,7 @@ class VolumeApp(_AppBase):
             command=lambda: self._batch_assign_surface("top")
         )
         self.btn_sel_top.pack(side=tk.LEFT, padx=(0, 4), pady=3)
+        add_tooltip(self.btn_sel_top, "Перенести все выделенные точки на верхнюю поверхность")
 
         self.btn_sel_contour = ctk.CTkButton(
             self.frame_selection_bar,
@@ -1604,6 +1647,7 @@ class VolumeApp(_AppBase):
             command=self._build_boundary_from_selected_points
         )
         self.btn_sel_contour.pack(side=tk.LEFT, padx=(0, 4), pady=3)
+        add_tooltip(self.btn_sel_contour, "Построить контур сшивания вокруг выделенных точек (Convex Hull)")
 
         self.btn_sel_delete = ctk.CTkButton(
             self.frame_selection_bar,
@@ -1617,6 +1661,7 @@ class VolumeApp(_AppBase):
             command=lambda: self._delete_point(-1)
         )
         self.btn_sel_delete.pack(side=tk.LEFT, padx=(0, 4), pady=3)
+        add_tooltip(self.btn_sel_delete, "Удалить все выделенные точки из проекта")
 
         self.btn_sel_clear = ctk.CTkButton(
             self.frame_selection_bar,
@@ -1630,6 +1675,7 @@ class VolumeApp(_AppBase):
             command=self._clear_selected_points
         )
         self.btn_sel_clear.pack(side=tk.LEFT, padx=(0, 8), pady=3)
+        add_tooltip(self.btn_sel_clear, "Снять выделение со всех точек")
 
         # Отслеживание изменения границ осей для мгновенного скрытия/показа подписей точек
         self.ax_2d.callbacks.connect("xlim_changed", lambda ax: self._update_2d_annotations_visibility())
@@ -1955,12 +2001,20 @@ class VolumeApp(_AppBase):
         top_bar_3d = ctk.CTkFrame(self.tab_3d, fg_color="transparent", height=30)
         top_bar_3d.pack(fill=tk.X, side=tk.TOP, padx=4, pady=(2, 2))
 
-        ctk.CTkButton(top_bar_3d, text="⛶ На весь экран (Чистый 3D)", width=0, height=24, font=ctk.CTkFont(size=11),
-                      command=self._open_fullscreen_3d).pack(side=tk.LEFT, padx=(0, 6))
-        ctk.CTkButton(top_bar_3d, text="🔄 Исходный ракурс", width=0, height=24, font=ctk.CTkFont(size=11),
-                      command=self._reset_3d_view).pack(side=tk.LEFT, padx=(0, 4))
-        ctk.CTkButton(top_bar_3d, text="🔝 Вид сверху (План)", width=0, height=24, font=ctk.CTkFont(size=11),
-                      command=self._top_3d_view).pack(side=tk.LEFT, padx=(0, 4))
+        b_fs = ctk.CTkButton(top_bar_3d, text="⛶ На весь экран (Чистый 3D)", width=0, height=24, font=ctk.CTkFont(size=11),
+                             command=self._open_fullscreen_3d)
+        b_fs.pack(side=tk.LEFT, padx=(0, 6))
+        add_tooltip(b_fs, "Развернуть 3D модель рельефа в отдельное полноэкранное окно без панелей (также двойной клик)")
+
+        b_reset = ctk.CTkButton(top_bar_3d, text="🔄 Исходный ракурс", width=0, height=24, font=ctk.CTkFont(size=11),
+                                command=self._reset_3d_view)
+        b_reset.pack(side=tk.LEFT, padx=(0, 4))
+        add_tooltip(b_reset, "Сбросить угол обзора, масштаб и поворот 3D модели к начальному состоянию")
+
+        b_top = ctk.CTkButton(top_bar_3d, text="🔝 Вид сверху (План)", width=0, height=24, font=ctk.CTkFont(size=11),
+                              command=self._top_3d_view)
+        b_top.pack(side=tk.LEFT, padx=(0, 4))
+        add_tooltip(b_top, "Установить вид строго сверху (в плане) для ортогонального обзора")
 
         from mpl_toolkits.mplot3d import Axes3D
         is_dark = (ctk.get_appearance_mode() == "Dark") if hasattr(ctk, "get_appearance_mode") else False
@@ -2131,17 +2185,31 @@ class VolumeApp(_AppBase):
         tbl_toolbar = ctk.CTkFrame(self.tab_table, fg_color="transparent", height=40)
         tbl_toolbar.pack(fill=tk.X, side=tk.TOP, padx=5, pady=4)
 
-        ctk.CTkButton(tbl_toolbar, text="➕ Добавить точку", width=0,
-                      command=self._add_point_dialog).pack(side=tk.LEFT, padx=(0, 4))
-        ctk.CTkButton(tbl_toolbar, text="✏️ Редактировать", width=0,
-                      command=self._edit_selected_point_dialog).pack(side=tk.LEFT, padx=(0, 4))
-        ctk.CTkButton(tbl_toolbar, text="🗑️ Удалить точку", width=0,
-                      fg_color="#8B2020", hover_color="#A02828",
-                      command=self._delete_selected_point).pack(side=tk.LEFT, padx=(0, 4))
-        ctk.CTkButton(tbl_toolbar, text="🔄 Сменить тип", width=0,
-                      command=self._toggle_selected_point_type).pack(side=tk.LEFT, padx=(0, 4))
-        ctk.CTkButton(tbl_toolbar, text="🔀 Колонки...", width=0,
-                      command=self._open_remap_dialog).pack(side=tk.LEFT, padx=(0, 8))
+        b_add = ctk.CTkButton(tbl_toolbar, text="➕ Добавить точку", width=0,
+                              command=self._add_point_dialog)
+        b_add.pack(side=tk.LEFT, padx=(0, 4))
+        add_tooltip(b_add, "Вручную ввести координаты (Север X, Восток Y, Высота H) новой точки")
+
+        b_edit = ctk.CTkButton(tbl_toolbar, text="✏️ Редактировать", width=0,
+                               command=self._edit_selected_point_dialog)
+        b_edit.pack(side=tk.LEFT, padx=(0, 4))
+        add_tooltip(b_edit, "Редактировать координаты или имя выбранной точки (также двойной клик)")
+
+        b_del = ctk.CTkButton(tbl_toolbar, text="🗑️ Удалить точку", width=0,
+                              fg_color="#8B2020", hover_color="#A02828",
+                              command=self._delete_selected_point)
+        b_del.pack(side=tk.LEFT, padx=(0, 4))
+        add_tooltip(b_del, "Удалить выбранную точку из проекта")
+
+        b_toggle = ctk.CTkButton(tbl_toolbar, text="🔄 Сменить тип", width=0,
+                                 command=self._toggle_selected_point_type)
+        b_toggle.pack(side=tk.LEFT, padx=(0, 4))
+        add_tooltip(b_toggle, "Переключить принадлежность точки (Верхняя / Нижняя / Контур / Авто)")
+
+        b_remap = ctk.CTkButton(tbl_toolbar, text="🔀 Колонки...", width=0,
+                                command=self._open_remap_dialog)
+        b_remap.pack(side=tk.LEFT, padx=(0, 8))
+        add_tooltip(b_remap, "Настроить сопоставление столбцов таблицы с осями X, Y, Z")
 
         self.lbl_table_stats = ctk.CTkLabel(tbl_toolbar, text="Всего: 0 точек",
                                              font=ctk.CTkFont(size=11, weight="bold"))
@@ -2187,20 +2255,37 @@ class VolumeApp(_AppBase):
                                            text_color=("#1a5276", "#e0e0e0"))
         self.lbl_tin_stats.pack(side=tk.RIGHT, padx=(6, 4))
 
-        ctk.CTkButton(top_bar, text="🔍 В фокус", width=0, height=24, font=ctk.CTkFont(size=11),
-                      command=self._fit_tin_view).pack(side=tk.LEFT, padx=(0, 3))
-        ctk.CTkButton(top_bar, text="✂ Исключить", width=0, height=24, font=ctk.CTkFont(size=11),
-                      command=self._tin_toggle_selected).pack(side=tk.LEFT, padx=(0, 3))
-        ctk.CTkButton(top_bar, text="↩ Сброс", width=0, height=24, font=ctk.CTkFont(size=11),
-                      command=self._tin_reset).pack(side=tk.LEFT, padx=(0, 3))
-        ctk.CTkButton(top_bar, text="📊 Таблица", width=0, height=24, font=ctk.CTkFont(size=11),
-                      command=self._open_tin_table_dialog).pack(side=tk.LEFT, padx=(0, 3))
-        self.btn_toggle_tin_table = None
-        ctk.CTkButton(top_bar, text="🔄 Делоне", width=0, height=24, font=ctk.CTkFont(size=11),
-                      command=self._tin_reset_to_delaunay).pack(side=tk.LEFT, padx=(0, 4))
+        b_fit = ctk.CTkButton(top_bar, text="🔍 В фокус", width=0, height=24, font=ctk.CTkFont(size=11),
+                              command=self._fit_tin_view)
+        b_fit.pack(side=tk.LEFT, padx=(0, 3))
+        add_tooltip(b_fit, "Вписать всю триангуляцию в границы экрана")
 
-        ctk.CTkButton(top_bar, text="⚡ Оптимизация", width=0, height=24, font=ctk.CTkFont(size=11),
-                      command=self._auto_optimize_tin_edges).pack(side=tk.LEFT, padx=(0, 4))
+        b_ex = ctk.CTkButton(top_bar, text="✂ Исключить", width=0, height=24, font=ctk.CTkFont(size=11),
+                             command=self._tin_toggle_selected)
+        b_ex.pack(side=tk.LEFT, padx=(0, 3))
+        add_tooltip(b_ex, "Исключить/вернуть выбранный треугольник")
+
+        b_res = ctk.CTkButton(top_bar, text="↩ Сброс", width=0, height=24, font=ctk.CTkFont(size=11),
+                              command=self._tin_reset)
+        b_res.pack(side=tk.LEFT, padx=(0, 3))
+        add_tooltip(b_res, "Сбросить исключения треугольников")
+
+        b_table = ctk.CTkButton(top_bar, text="📊 Таблица", width=0, height=24, font=ctk.CTkFont(size=11),
+                                command=self._open_tin_table_dialog)
+        b_table.pack(side=tk.LEFT, padx=(0, 3))
+        add_tooltip(b_table, "Открыть полноэкранную интерактивную таблицу треугольников с сортировкой и фильтрацией")
+
+        self.btn_toggle_tin_table = None
+
+        b_del = ctk.CTkButton(top_bar, text="🔄 Делоне", width=0, height=24, font=ctk.CTkFont(size=11),
+                              command=self._tin_reset_to_delaunay)
+        b_del.pack(side=tk.LEFT, padx=(0, 4))
+        add_tooltip(b_del, "Сбросить сетку к стандартной триангуляции Делоне")
+
+        b_opt = ctk.CTkButton(top_bar, text="⚡ Оптимизация", width=0, height=24, font=ctk.CTkFont(size=11),
+                              command=self._auto_optimize_tin_edges)
+        b_opt.pack(side=tk.LEFT, padx=(0, 4))
+        add_tooltip(b_opt, "Автоматическая оптимизация рёбер триангуляции по минимальному углу")
 
         ctk.CTkLabel(top_bar, text="Угол:", font=ctk.CTkFont(size=10)).pack(side=tk.LEFT)
         self._tin_min_angle = tk.IntVar(value=7)
@@ -6100,11 +6185,7 @@ class VolumeApp(_AppBase):
             else:
                 save_btn.config(command=toolbar.save_figure, bg=tb_bg, activebackground=tb_bg)
             save_btn.pack_configure(padx=(28, 2), pady=1)
-            try:
-                from matplotlib.backends._backend_tk import add_tooltip
-                add_tooltip(save_btn, f"Сохранить {tab_name}.png в папку проекта")
-            except Exception:
-                pass
+            add_tooltip(save_btn, f"Сохранить изображение текущей вкладки '{tab_name}' в формате PNG")
 
         btn_report = tk.Button(
             master=toolbar,
@@ -6128,11 +6209,7 @@ class VolumeApp(_AppBase):
         else:
             btn_report.pack(side=tk.LEFT, padx=(28, 0), pady=1)
 
-        try:
-            from matplotlib.backends._backend_tk import add_tooltip
-            add_tooltip(btn_report, "Сохранить результаты расчета (TXT) в папку проекта")
-        except Exception:
-            pass
+        add_tooltip(btn_report, "Сохранить подробный текстовый отчет расчета объема (TXT) в папку проекта")
 
         # 3. Центральная строка с объемами насыпи и выемки при открытых во весь экран вкладках
         lbl_vol = tk.Label(

@@ -188,3 +188,21 @@ class TestV1Improvements:
             dlg.destroy()
         finally:
             root.destroy()
+
+    def test_add_tooltip(self):
+        """Проверка добавления подсказки к виджету"""
+        from ui_dialogs import add_tooltip, ToolTip
+        import tkinter as tk
+        import customtkinter as ctk
+
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            btn = ctk.CTkButton(root, text="Test Button")
+            tt = add_tooltip(btn, "Тестовая подсказка", delay_ms=100)
+            assert isinstance(tt, ToolTip)
+            assert tt.text == "Тестовая подсказка"
+            assert tt.widget is btn
+            btn.destroy()
+        finally:
+            root.destroy()

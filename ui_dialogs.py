@@ -464,6 +464,7 @@ class CoordinateRemapDialog(tk.Toplevel):
             font=ctk.CTkFont(size=12, weight="bold")
         )
         btn_swap.grid(row=0, column=4, rowspan=2, padx=(10, 4), pady=6, sticky=tk.W)
+        add_tooltip(btn_swap, "Поменять местами назначение столбцов X (Север) и Y (Восток)")
 
         btn_box = ctk.CTkFrame(main_frame, fg_color="transparent")
         btn_box.pack(fill=tk.X, pady=(2, 0))
@@ -950,6 +951,7 @@ class TINTableDialog(tk.Toplevel):
             height=30
         )
         self.btn_toggle.pack(side=tk.LEFT, padx=(0, 8))
+        add_tooltip(self.btn_toggle, "Исключить или вернуть выбранные треугольники в расчет")
 
         self.btn_reset_all = ctk.CTkButton(
             btn_frame,
@@ -960,6 +962,7 @@ class TINTableDialog(tk.Toplevel):
             height=30
         )
         self.btn_reset_all.pack(side=tk.LEFT, padx=(0, 8))
+        add_tooltip(self.btn_reset_all, "Сбросить все исключения и вернуть все треугольники в расчет")
 
         btn_close = ctk.CTkButton(
             btn_frame,
@@ -972,6 +975,7 @@ class TINTableDialog(tk.Toplevel):
             hover_color="gray30"
         )
         btn_close.pack(side=tk.RIGHT)
+        add_tooltip(btn_close, "Закрыть окно таблицы треугольников")
 
         self.bind("<Escape>", lambda e: self.destroy())
         self._populate_table()
@@ -1057,3 +1061,102 @@ class TINTableDialog(tk.Toplevel):
             if hasattr(self.app, "calculate_volume") and len(getattr(self.app, "boundary_indices", [])) >= 3:
                 self.app.calculate_volume()
         self._populate_table()
+
+
+class ToolTip:
+    """Всплывающая подсказка (Tooltip) для кнопок и элементов интерфейса Tkinter/CustomTkinter."""
+
+    def __init__(self, widget, text: str, delay_ms: int = 350):
+        self.widget = widget
+        self.text = text
+        self.delay_ms = delay_ms
+        self._tip_window = None
+        self._after_id = None
+
+        if hasattr(widget, "bind"):
+            try:
+                widget.bind("<Enter>", self._on_enter, add=True)
+                widget.bind("<Leave>", self._on_leave, add=True)
+                widget.bind("<ButtonPress>", self._on_leave, add=True)
+            except Exception:
+                pass
+
+    def _on_enter(self, event=None):
+        self._cancel_timer()
+        if hasattr(self.widget, "after"):
+            try:
+                self._after_id = self.widget.after(self.delay_ms, self._show_tip)
+            except Exception:
+                pass
+
+    def _on_leave(self, event=None):
+        self._cancel_timer()
+        self._hide_tip()
+
+    def _cancel_timer(self):
+        if self._after_id is not None:
+            try:
+                self.widget.after_cancel(self._after_id)
+            except Exception:
+                pass
+            self._after_id = None
+
+    def _show_tip(self):
+        self._after_id = None
+        if self._tip_window or not self.text:
+            return
+
+        try:
+            if not self.widget.winfo_exists():
+                return
+
+            x = self.widget.winfo_rootx() + 8
+            y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+
+            screen_w = self.widget.winfo_screenwidth()
+            screen_h = self.widget.winfo_screenheight()
+            if y + 32 > screen_h:
+                y = self.widget.winfo_rooty() - 28
+
+            self._tip_window = tw = tk.Toplevel(self.widget)
+            tw.wm_overrideredirect(True)
+            tw.wm_geometry(f"+{x}+{y}")
+            try:
+                tw.attributes("-topmost", True)
+            except Exception:
+                pass
+
+            bg = "#1f2328"
+            fg = "#f0f6fc"
+            border = "#444c56"
+
+            frame = tk.Frame(tw, background=bg, highlightbackground=border, highlightthickness=1)
+            frame.pack(fill=tk.BOTH, expand=True)
+
+            label = tk.Label(
+                frame,
+                text=self.text,
+                justify=tk.LEFT,
+                background=bg,
+                foreground=fg,
+                font=("Segoe UI", 9),
+                padx=7,
+                pady=3
+            )
+            label.pack()
+        except Exception:
+            self._hide_tip()
+
+    def _hide_tip(self):
+        if self._tip_window is not None:
+            try:
+                self._tip_window.destroy()
+            except Exception:
+                pass
+            self._tip_window = None
+
+
+def add_tooltip(widget, text: str, delay_ms: int = 350) -> ToolTip:
+    """Привязывает всплывающую подсказку к любому элементу интерфейса."""
+    return ToolTip(widget, text, delay_ms=delay_ms)
+
