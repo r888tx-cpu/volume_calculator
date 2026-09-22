@@ -260,6 +260,13 @@ from project_storage import ProjectStorageService, NumpyJSONEncoder
 _AppBase = TkinterDnD.Tk if _DND_AVAILABLE else tk.Tk
 
 class VolumeApp(_AppBase):
+    TAB_2D: str = "2D Схема в плане"
+    TAB_3D: str = "3D Поверхности"
+    TAB_DIFF: str = "Картограмма масс"
+    TAB_TIN: str = "TIN Триангуляция"
+    TAB_CONTOURS: str = "Горизонтали"
+    TAB_TABLE: str = "Таблица точек"
+
     LOD_LABEL_THRESHOLD: int = 50  # Порог авто-показа подписей: только при <= 50 точек в кадре
     _point_labels_mode: str = "on"
     _labels_update_timer = None
@@ -368,6 +375,10 @@ class VolumeApp(_AppBase):
         self._3d_dirty = False
         self._diff_dirty = False
         self._2d_dirty = False
+        self._contours_dirty = False
+        self._contours_view_initialized = False
+        self._contours_pan_start = None
+        self._contours_pan_dragged = False
         self._auto_save_timer = None
         self._boundary_calc_timer = None
 
@@ -393,14 +404,21 @@ class VolumeApp(_AppBase):
         self.canvas_3d = None
         self.canvas_diff = None
         self.canvas_tin = None
+        self.canvas_contours = None
         self.fig_2d = None
         self.fig_3d = None
         self.fig_diff = None
         self.fig_tin = None
+        self.fig_contours = None
         self.ax_2d = None
         self.ax_3d = None
         self.ax_diff = None
         self.ax_tin = None
+        self.ax_contours = None
+        self._toolbar_contours = None
+        self.cbo_contour_step = None
+        self._show_contour_labels = None
+        self.lbl_contours_stats = None
         self.tree = None
         self.tree_tin = None
         self.lbl_tin_stats = None
@@ -1023,7 +1041,18 @@ class VolumeApp(_AppBase):
                     pass
                 self.canvas_tin.draw_idle()
 
-        # 5. Плавающие панели поверхностей и панель селекции
+        # 5. Горизонтали
+        if hasattr(self, "ax_contours") and self.ax_contours is not None:
+            self._apply_axes_theme(self.ax_contours, getattr(self, "fig_contours", None), is_dark)
+            if hasattr(self, "canvas_contours") and self.canvas_contours is not None:
+                try:
+                    if hasattr(self.canvas_contours, "get_tk_widget"):
+                        self.canvas_contours.get_tk_widget().configure(bg=fig_bg)
+                except Exception:
+                    pass
+                self.canvas_contours.draw_idle()
+
+        # 6. Плавающие панели поверхностей и панель селекции
         for p in getattr(self, "_fs_surface_panels", {}).values():
             try:
                 p.configure(bg_color=fig_bg)
@@ -1050,8 +1079,9 @@ class VolumeApp(_AppBase):
         self.TAB_2D = "2D Схема в плане"
         self.TAB_3D = "3D Поверхности"
         self.TAB_DIFF = "Картограмма масс"
-        self.TAB_TABLE = "Таблица точек"
         self.TAB_TIN = "TIN Триангуляция"
+        self.TAB_CONTOURS = "Горизонтали"
+        self.TAB_TABLE = "Таблица точек"
 
         self.tabview = ctk.CTkTabview(
             self.right_frame,
@@ -1074,14 +1104,16 @@ class VolumeApp(_AppBase):
         self.tab_2d = self.tabview.add(self.TAB_2D)
         self.tab_3d = self.tabview.add(self.TAB_3D)
         self.tab_diff = self.tabview.add(self.TAB_DIFF)
-        self.tab_table = self.tabview.add(self.TAB_TABLE)
         self.tab_tin = self.tabview.add(self.TAB_TIN)
+        self.tab_contours = self.tabview.add(self.TAB_CONTOURS)
+        self.tab_table = self.tabview.add(self.TAB_TABLE)
 
         self._build_2d_tab()
         self._build_3d_tab()
         self._build_diff_tab()
-        self._build_table_tab()
         self._build_tin_tab()
+        self._build_contours_tab()
+        self._build_table_tab()
 
         # Настройка двойного щелчка по названию вкладки для разворачивания на весь экран
         self._setup_tab_double_click()
@@ -1364,6 +1396,11 @@ class VolumeApp(_AppBase):
                     self._apply_fig_layout(self.fig_tin, pad=0.5)
                 if hasattr(self, "_fit_tin_view"):
                     self._fit_tin_view()
+            elif current_tab == getattr(self, "TAB_CONTOURS", "Горизонтали"):
+                if hasattr(self, "fig_contours"):
+                    self._apply_fig_layout(self.fig_contours, pad=0.5)
+                if hasattr(self, "_fit_contours_view"):
+                    self._fit_contours_view()
             elif current_tab == self.TAB_3D:
                 if hasattr(self, "fig_3d"):
                     self._apply_fig_layout(self.fig_3d, pad=0.5)
@@ -1467,6 +1504,47 @@ class VolumeApp(_AppBase):
                             else:
                                 s_val = f"{val:.2f}"
                             return f"[{prefix} {s_val} {unit}]   {coord_str}"
+        return coord_str
+
+    def _format_coord_contours(self, y_east, x_north):
+        """Быстрое отображение координат и отметок высот Z_верх/Z_низ под курсором на плане горизонталей (O(1))."""
+        if y_east is None or x_north is None:
+            return ""
+        coord_str = f"X (Север): {x_north:.3f},  Y (Восток): {y_east:.3f}"
+        r = getattr(self, "calc_results", None)
+        if r is not None:
+            gx = r.get("grid_x")
+            gy = r.get("grid_y")
+            if gx is not None and gy is not None and gx.size > 0 and gy.size > 0:
+                min_x, max_x = float(gx.min()), float(gx.max())
+                min_y, max_y = float(gy.min()), float(gy.max())
+                if min_x <= x_north <= max_x and min_y <= y_east <= max_y:
+                    dx1 = abs(gx[0, 1] - gx[0, 0]) if gx.shape[1] > 1 else 0.0
+                    dx0 = abs(gx[1, 0] - gx[0, 0]) if gx.shape[0] > 1 else 0.0
+                    step_x = dx1 if dx1 > 1e-6 else (dx0 if dx0 > 1e-6 else max((max_x - min_x) / max(gx.shape[1] - 1, 1), 0.1))
+
+                    dy0 = abs(gy[1, 0] - gy[0, 0]) if gy.shape[0] > 1 else 0.0
+                    dy1 = abs(gy[0, 1] - gy[0, 0]) if gy.shape[1] > 1 else 0.0
+                    step_y = dy0 if dy0 > 1e-6 else (dy1 if dy1 > 1e-6 else max((max_y - min_y) / max(gy.shape[0] - 1, 1), 0.1))
+
+                    r_idx = int(round((y_east - min_y) / max(step_y, 1e-6)))
+                    c_idx = int(round((x_north - min_x) / max(step_x, 1e-6)))
+                    z_top_grid = r.get("z_top_grid")
+                    z_bot_grid = r.get("z_bot_grid")
+                    show_top = self._show_top.get() if hasattr(self, "_show_top") else True
+                    show_bottom = self._show_bottom.get() if hasattr(self, "_show_bottom") else True
+
+                    h_parts = []
+                    if show_top and z_top_grid is not None and 0 <= r_idx < z_top_grid.shape[0] and 0 <= c_idx < z_top_grid.shape[1]:
+                        zt = float(z_top_grid[r_idx, c_idx])
+                        if not np.isnan(zt):
+                            h_parts.append(f"Z_верх: {zt:.2f} м")
+                    if show_bottom and z_bot_grid is not None and 0 <= r_idx < z_bot_grid.shape[0] and 0 <= c_idx < z_bot_grid.shape[1]:
+                        zb = float(z_bot_grid[r_idx, c_idx])
+                        if not np.isnan(zb):
+                            h_parts.append(f"Z_низ: {zb:.2f} м")
+                    if h_parts:
+                        return f"[{' | '.join(h_parts)}]   {coord_str}"
         return coord_str
 
     def _build_2d_tab(self):
@@ -2279,6 +2357,461 @@ class VolumeApp(_AppBase):
         self._tin_bottom_frame = None
         self.tree_tin = None
 
+    def _build_contours_tab(self):
+        """Строит вкладку топографических горизонталей (изогипс) с компактной панелью инструментов"""
+        top_bar = ctk.CTkFrame(self.tab_contours, fg_color="transparent", height=30)
+        top_bar.pack(fill=tk.X, side=tk.TOP, padx=4, pady=(2, 2))
+
+        # Статус / диапазон высот — справа
+        self.lbl_contours_stats = ctk.CTkLabel(
+            top_bar, text="Горизонтали: —",
+            font=ctk.CTkFont(size=10, weight="bold"),
+            text_color=("#1a5276", "#e0e0e0")
+        )
+        self.lbl_contours_stats.pack(side=tk.RIGHT, padx=(6, 4))
+
+        b_fit = ctk.CTkButton(
+            top_bar, text="🔍 В фокус", width=0, height=24, font=ctk.CTkFont(size=11),
+            command=self._fit_contours_view
+        )
+        b_fit.pack(side=tk.LEFT, padx=(0, 4))
+        add_tooltip(b_fit, "Вписать план с горизонталями в границы экрана")
+
+        lbl_step = ctk.CTkLabel(top_bar, text="Шаг (м):", font=ctk.CTkFont(size=10))
+        lbl_step.pack(side=tk.LEFT, padx=(4, 2))
+
+        self.cbo_contour_step = ttk.Combobox(
+            top_bar,
+            values=["Авто", "0.05", "0.1", "0.25", "0.5", "1.0", "2.0", "5.0"],
+            state="readonly",
+            width=7,
+            font=("Segoe UI", 9)
+        )
+        self.cbo_contour_step.set("Авто")
+        self.cbo_contour_step.bind("<<ComboboxSelected>>", lambda e: self._on_contour_settings_changed())
+        self.cbo_contour_step.pack(side=tk.LEFT, padx=(0, 6))
+        add_tooltip(self.cbo_contour_step, "Шаг сечения рельефа горизонталями (в метрах)")
+
+        self._show_contour_labels = tk.BooleanVar(value=True)
+        cb_labels = ctk.CTkCheckBox(
+            top_bar,
+            text="Отметки",
+            variable=self._show_contour_labels,
+            command=self._on_contour_settings_changed,
+            width=16,
+            height=16,
+            checkbox_width=16,
+            checkbox_height=16,
+            font=ctk.CTkFont(size=11)
+        )
+        cb_labels.pack(side=tk.LEFT, padx=(0, 6))
+        add_tooltip(cb_labels, "Отображать числовые отметки высот на горизонталях")
+
+        is_dark = (ctk.get_appearance_mode() == "Dark") if hasattr(ctk, "get_appearance_mode") else False
+        title_color = "#e0e0e0" if is_dark else "#212529"
+        fig_bg = "#212529" if is_dark else "#ffffff"
+
+        self.fig_contours = Figure(figsize=(6, 4), dpi=100)
+        self.ax_contours = self.fig_contours.add_subplot(111)
+        self.ax_contours.set_xlabel("Восток Y (м)", color=title_color)
+        self.ax_contours.set_ylabel("Север X (м)", color=title_color)
+        self.ax_contours.grid(True, linestyle="--", alpha=0.4)
+        self.ax_contours.format_coord = self._format_coord_contours
+        self.ax_contours.xaxis.set_major_formatter(PlainOffsetFormatter(useOffset=True))
+        self.ax_contours.yaxis.set_major_formatter(PlainOffsetFormatter(useOffset=True))
+        self._apply_axes_theme(self.ax_contours, self.fig_contours, is_dark)
+
+        self.canvas_contours = FigureCanvasTkAgg(self.fig_contours, master=self.tab_contours)
+        cw_contours = self.canvas_contours.get_tk_widget()
+        cw_contours.configure(bg=fig_bg)
+        cw_contours.pack(fill=tk.BOTH, expand=True)
+        self._fs_surface_panels[self.TAB_CONTOURS] = self._create_canvas_surface_panel(cw_contours)
+
+        self._toolbar_contours = ProjectNavigationToolbar(self.canvas_contours, cw_contours, pack_toolbar=False)
+        self._toolbar_contours.place(relx=0.0, rely=1.0, anchor="sw", relwidth=1.0, height=26)
+        self._setup_custom_toolbar_buttons(self._toolbar_contours, self.fig_contours, self.TAB_CONTOURS)
+        self._toolbars.append(self._toolbar_contours)
+
+        self.canvas_contours.mpl_connect("button_press_event", self._on_contours_canvas_press)
+        self.canvas_contours.mpl_connect("button_release_event", self._on_contours_canvas_release)
+        self.canvas_contours.mpl_connect("motion_notify_event", self._on_contours_canvas_motion)
+        self.canvas_contours.mpl_connect("scroll_event", self._on_contours_canvas_scroll)
+
+    def _on_contour_settings_changed(self, *args):
+        """Вызывается при изменении настроек шага или отметок горизонталей"""
+        self._redraw_contours()
+
+    def _fit_contours_view(self):
+        """Устанавливает границы ax_contours точно в фокус отображаемых данных с отступом 5%"""
+        if not hasattr(self, "ax_contours") or self.ax_contours is None:
+            return
+
+        pts_y = []
+        pts_x = []
+
+        if len(self.boundary_indices) >= 3:
+            boundary_set = set(self.boundary_indices)
+            bound_pts = np.array([[self.points[i].x, self.points[i].y] for i in self.boundary_indices])
+            bound_path = MplPath(bound_pts)
+
+            for i, p in enumerate(self.points):
+                if i in boundary_set or bound_path.contains_point((p.x, p.y), radius=1e-5):
+                    pts_y.append(p.y)
+                    pts_x.append(p.x)
+
+        if not pts_y or not pts_x:
+            pts_y = [p.y for p in self.points]
+            pts_x = [p.x for p in self.points]
+
+        if not pts_y or not pts_x:
+            if self.calc_results:
+                boundary = self.calc_results.get("boundary")
+                if boundary is not None and len(boundary) > 0:
+                    pts_y = boundary[:, 1].tolist()
+                    pts_x = boundary[:, 0].tolist()
+
+        if not pts_y or not pts_x:
+            return
+
+        min_y, max_y = min(pts_y), max(pts_y)
+        min_x, max_x = min(pts_x), max(pts_x)
+
+        span_y = max(max_y - min_y, 1.0)
+        span_x = max(max_x - min_x, 1.0)
+
+        pad_y = span_y * 0.05
+        pad_x = span_x * 0.05
+
+        self.ax_contours.set_xlim(min_y - pad_y, max_y + pad_y)
+        self.ax_contours.set_ylim(min_x - pad_x, max_x + pad_x)
+        self.ax_contours.set_aspect("equal", adjustable="datalim")
+        if hasattr(self, "canvas_contours") and self.canvas_contours is not None:
+            self.canvas_contours.draw_idle()
+
+    def _redraw_contours(self):
+        """Отрисовывает топографические горизонтали рельефа с векторной обрезкой по контуру"""
+        if not hasattr(self, "ax_contours") or self.ax_contours is None:
+            return
+
+        is_dark = (ctk.get_appearance_mode() == "Dark") if hasattr(ctk, "get_appearance_mode") else False
+        title_color = "#e0e0e0" if is_dark else "#212529"
+
+        cur_xlim = self.ax_contours.get_xlim() if getattr(self, "_contours_view_initialized", False) else None
+        cur_ylim = self.ax_contours.get_ylim() if getattr(self, "_contours_view_initialized", False) else None
+
+        self.ax_contours.clear()
+        self._apply_axes_theme(self.ax_contours, getattr(self, "fig_contours", None), is_dark)
+        self.ax_contours.set_xlabel("Восток Y (м)", color=title_color)
+        self.ax_contours.set_ylabel("Север X (м)", color=title_color)
+        self.ax_contours.grid(True, linestyle="--", alpha=0.35)
+        self.ax_contours.format_coord = self._format_coord_contours
+        self.ax_contours.xaxis.set_major_formatter(PlainOffsetFormatter(useOffset=True))
+        self.ax_contours.yaxis.set_major_formatter(PlainOffsetFormatter(useOffset=True))
+
+        if not self.calc_results or not self.points or len(self.boundary_indices) < 3:
+            self.ax_contours.text(
+                0.5, 0.5,
+                "Для построения горизонталей рельефа выполните расчет объема\n(нажмите кнопку '⚡ Рассчитать объем' в левой панели)",
+                transform=self.ax_contours.transAxes,
+                ha="center", va="center",
+                fontsize=11, color=title_color, alpha=0.7
+            )
+            if hasattr(self, "lbl_contours_stats") and self.lbl_contours_stats is not None:
+                self.lbl_contours_stats.configure(text="Горизонтали: расчет не выполнен")
+            if hasattr(self, "canvas_contours") and self.canvas_contours is not None:
+                self.canvas_contours.draw_idle()
+            return
+
+        r = self.calc_results
+        gx = r.get("grid_x")
+        gy = r.get("grid_y")
+        z_top = r.get("z_top_grid")
+        z_bot = r.get("z_bot_grid")
+        boundary = r.get("boundary")
+
+        if gx is None or gy is None:
+            return
+
+        show_top = self._show_top.get() if hasattr(self, "_show_top") else True
+        show_bottom = self._show_bottom.get() if hasattr(self, "_show_bottom") else True
+
+        if not show_top and not show_bottom:
+            self.ax_contours.text(
+                0.5, 0.5,
+                "Отображение поверхностей отключено.\nВключите чекбокс '▲ Верхняя' или '▼ Нижняя' в правом верхнем углу.",
+                transform=self.ax_contours.transAxes,
+                ha="center", va="center",
+                fontsize=11, color=title_color, alpha=0.7
+            )
+            if hasattr(self, "lbl_contours_stats") and self.lbl_contours_stats is not None:
+                self.lbl_contours_stats.configure(text="Поверхности скрыты")
+            if hasattr(self, "canvas_contours") and self.canvas_contours is not None:
+                self.canvas_contours.draw_idle()
+            return
+
+        # Полигон отсечения по контуру границы съёмки
+        poly_clip = None
+        bound_closed_yx = None
+        if boundary is not None and len(boundary) >= 3:
+            boundary_yx = np.column_stack((boundary[:, 1], boundary[:, 0]))
+            bound_closed_yx = np.vstack([boundary_yx, boundary_yx[0]])
+            poly_clip = MplPolygon(boundary_yx, closed=True, facecolor="none", edgecolor="none", transform=self.ax_contours.transData)
+            self.ax_contours.add_patch(poly_clip)
+
+        # Сбор диапазонов высот
+        all_z_valid = []
+        top_valid = z_top[~np.isnan(z_top)] if (show_top and z_top is not None) else np.array([])
+        bot_valid = z_bot[~np.isnan(z_bot)] if (show_bottom and z_bot is not None) else np.array([])
+        if len(top_valid) > 0:
+            all_z_valid.append(top_valid)
+        if len(bot_valid) > 0:
+            all_z_valid.append(bot_valid)
+
+        if not all_z_valid:
+            return
+
+        merged_z = np.concatenate(all_z_valid)
+        z_min_total = float(np.min(merged_z))
+        z_max_total = float(np.max(merged_z))
+        delta_z = max(z_max_total - z_min_total, 0.01)
+
+        # Определение шага горизонталей
+        step_str = self.cbo_contour_step.get() if (hasattr(self, "cbo_contour_step") and self.cbo_contour_step is not None) else "Авто"
+        if step_str == "Авто" or not step_str:
+            if delta_z <= 0.6:
+                c_step = 0.05
+            elif delta_z <= 1.5:
+                c_step = 0.1
+            elif delta_z <= 4.0:
+                c_step = 0.25
+            elif delta_z <= 10.0:
+                c_step = 0.5
+            elif delta_z <= 25.0:
+                c_step = 1.0
+            elif delta_z <= 60.0:
+                c_step = 2.0
+            else:
+                c_step = 5.0
+        else:
+            try:
+                c_step = float(step_str.replace(",", "."))
+                if c_step <= 0:
+                    c_step = 0.5
+            except Exception:
+                c_step = 0.5
+
+        # Формирование инфо-строки
+        stat_parts = [f"Шаг h = {c_step:g} м"]
+        if show_top and len(top_valid) > 0:
+            stat_parts.append(f"Верх: {float(np.min(top_valid)):.2f}..{float(np.max(top_valid)):.2f} м")
+        if show_bottom and len(bot_valid) > 0:
+            stat_parts.append(f"Низ: {float(np.min(bot_valid)):.2f}..{float(np.max(bot_valid)):.2f} м")
+        if hasattr(self, "lbl_contours_stats") and self.lbl_contours_stats is not None:
+            self.lbl_contours_stats.configure(text=" | ".join(stat_parts))
+
+        show_labels = self._show_contour_labels.get() if hasattr(self, "_show_contour_labels") and self._show_contour_labels is not None else True
+        fmt_digits = 2 if c_step < 0.1 else (1 if c_step < 1.0 or any(abs(round(v, 1) - v) > 1e-4 for v in [z_min_total, z_max_total]) else 1)
+        fmt_str = f"%.{fmt_digits}f"
+
+        legend_lines = []
+        legend_labels = []
+
+        def _draw_surface_contours(grid_z, is_top_surface):
+            if grid_z is None:
+                return
+            z_clean = grid_z[~np.isnan(grid_z)]
+            if len(z_clean) == 0:
+                return
+            z_min_s = float(np.min(z_clean))
+            z_max_s = float(np.max(z_clean))
+            if z_max_s - z_min_s < 1e-4:
+                return
+
+            first_level = np.floor(z_min_s / c_step) * c_step
+            last_level = np.ceil(z_max_s / c_step) * c_step
+            levels = np.arange(first_level, last_level + c_step * 0.5, c_step)
+            if len(levels) == 0:
+                return
+
+            index_mult = 5
+            index_levels = [lvl for lvl in levels if abs(round(round(lvl / c_step) % index_mult)) < 1e-4]
+            inter_levels = [lvl for lvl in levels if abs(round(round(lvl / c_step) % index_mult)) >= 1e-4]
+
+            if is_top_surface:
+                col_idx = "#f59e0b" if is_dark else "#b45309"
+                col_sub = "#d97706" if is_dark else "#d97706"
+                ls_style = "-"
+                alpha_idx = 0.95
+                alpha_sub = 0.65
+                surf_label = "Верхняя поверхность"
+            else:
+                col_idx = "#38bdf8" if is_dark else "#0369a1"
+                col_sub = "#0ea5e9" if is_dark else "#0284c7"
+                ls_style = "--" if show_top else "-"
+                alpha_idx = 0.95
+                alpha_sub = 0.60
+                surf_label = "Нижняя поверхность"
+
+            cs_sub = None
+            if len(inter_levels) > 0:
+                try:
+                    cs_sub = self.ax_contours.contour(
+                        gy, gx, grid_z, levels=inter_levels,
+                        colors=col_sub, linewidths=0.75, linestyles=ls_style,
+                        alpha=alpha_sub, zorder=2
+                    )
+                    if poly_clip is not None:
+                        for coll in getattr(cs_sub, "collections", []):
+                            coll.set_clip_path(poly_clip)
+                except Exception:
+                    pass
+
+            if len(index_levels) > 0:
+                try:
+                    cs_idx = self.ax_contours.contour(
+                        gy, gx, grid_z, levels=index_levels,
+                        colors=col_idx, linewidths=1.45, linestyles=ls_style,
+                        alpha=alpha_idx, zorder=3
+                    )
+                    if poly_clip is not None:
+                        for coll in getattr(cs_idx, "collections", []):
+                            coll.set_clip_path(poly_clip)
+                    if show_labels:
+                        self.ax_contours.clabel(
+                            cs_idx, inline=True, fontsize=8.5, fmt=fmt_str,
+                            inline_spacing=8, use_clabeltext=True
+                        )
+                except Exception:
+                    pass
+            elif show_labels and cs_sub is not None:
+                try:
+                    self.ax_contours.clabel(
+                        cs_sub, inline=True, fontsize=8.0, fmt=fmt_str,
+                        inline_spacing=8, use_clabeltext=True
+                    )
+                except Exception:
+                    pass
+
+            legend_lines.append(matplotlib.lines.Line2D([0], [0], color=col_idx, lw=1.6, linestyle=ls_style))
+            legend_labels.append(surf_label)
+
+        if show_bottom:
+            _draw_surface_contours(z_bot, is_top_surface=False)
+        if show_top:
+            _draw_surface_contours(z_top, is_top_surface=True)
+
+        if bound_closed_yx is not None:
+            bound_col = "#10b981" if is_dark else "#059669"
+            self.ax_contours.plot(
+                bound_closed_yx[:, 0], bound_closed_yx[:, 1],
+                color=bound_col, linewidth=1.6, linestyle="-",
+                zorder=4, label="Граница съемки"
+            )
+            legend_lines.append(matplotlib.lines.Line2D([0], [0], color=bound_col, lw=1.6))
+            legend_labels.append("Граница съемки")
+
+        if legend_lines:
+            leg_bg = "#252930" if is_dark else "#ffffff"
+            leg = self.ax_contours.legend(
+                legend_lines, legend_labels,
+                loc="upper left", framealpha=0.88,
+                facecolor=leg_bg, edgecolor="#495057" if is_dark else "#ced4da",
+                fontsize=9
+            )
+            for text in leg.get_texts():
+                text.set_color(title_color)
+
+        if cur_xlim is not None and cur_ylim is not None and not np.isnan(cur_xlim[0]):
+            self.ax_contours.set_xlim(cur_xlim)
+            self.ax_contours.set_ylim(cur_ylim)
+            self.ax_contours.set_aspect("equal", adjustable="datalim")
+        else:
+            self._fit_contours_view()
+            self._contours_view_initialized = True
+
+        if hasattr(self, "canvas_contours") and self.canvas_contours is not None:
+            self.canvas_contours.draw_idle()
+
+    def _on_contours_canvas_press(self, event):
+        """Нажатие кнопки мыши на холсте горизонталей"""
+        try:
+            if hasattr(self, "_toolbar_contours") and self._toolbar_contours.mode != "":
+                return
+        except Exception:
+            pass
+
+        if event.x is None or event.y is None or event.inaxes != self.ax_contours:
+            return
+
+        self._contours_pan_start = (
+            event.x,
+            event.y,
+            event.xdata,
+            event.ydata,
+            self.ax_contours.get_xlim(),
+            self.ax_contours.get_ylim(),
+            event.button
+        )
+        self._contours_pan_dragged = False
+
+    def _on_contours_canvas_motion(self, event):
+        """Перемещение мыши — плавное панорамирование плана горизонталей"""
+        if getattr(self, "_contours_pan_start", None) is None or event.x is None or event.y is None:
+            return
+
+        start_px_x, start_px_y, _, _, orig_xlim, orig_ylim, btn = self._contours_pan_start
+        dx_px = event.x - start_px_x
+        dy_px = event.y - start_px_y
+
+        drag_threshold = 3 if btn in (2, 3) else 6
+        if abs(dx_px) > drag_threshold or abs(dy_px) > drag_threshold:
+            self._contours_pan_dragged = True
+
+        if self._contours_pan_dragged:
+            bbox = self.ax_contours.bbox
+            if bbox.width > 0 and bbox.height > 0:
+                dx_data = dx_px * (orig_xlim[1] - orig_xlim[0]) / bbox.width
+                dy_data = dy_px * (orig_ylim[1] - orig_ylim[0]) / bbox.height
+                self.ax_contours.set_xlim(orig_xlim[0] - dx_data, orig_xlim[1] - dx_data)
+                self.ax_contours.set_ylim(orig_ylim[0] - dy_data, orig_ylim[1] - dy_data)
+                self._throttled_canvas_draw(self.canvas_contours, delay_ms=25)
+
+    def _on_contours_canvas_release(self, event):
+        """Отпускание кнопки мыши на холсте горизонталей"""
+        if getattr(self, "_contours_pan_start", None) is None:
+            return
+
+        was_dragged = self._contours_pan_dragged
+        self._contours_pan_start = None
+        self._contours_pan_dragged = False
+
+        if was_dragged:
+            self._flush_canvas_draw(self.canvas_contours)
+
+    def _on_contours_canvas_scroll(self, event):
+        """Зумирование колесом мыши вокруг курсора на плане горизонталей"""
+        if event.xdata is None or event.ydata is None or event.inaxes != self.ax_contours:
+            return
+        base_scale = 1.25
+        scale_factor = 1.0 / base_scale if event.button == "up" else base_scale
+
+        cur_xlim = self.ax_contours.get_xlim()
+        cur_ylim = self.ax_contours.get_ylim()
+
+        xdata = event.xdata
+        ydata = event.ydata
+
+        new_width = (cur_xlim[1] - cur_xlim[0]) * scale_factor
+        new_height = (cur_ylim[1] - cur_ylim[0]) * scale_factor
+
+        relx = (cur_xlim[1] - xdata) / (cur_xlim[1] - cur_xlim[0])
+        rely = (cur_ylim[1] - ydata) / (cur_ylim[1] - cur_ylim[0])
+
+        self.ax_contours.set_xlim([xdata - new_width * (1 - relx), xdata + new_width * relx])
+        self.ax_contours.set_ylim([ydata - new_height * (1 - rely), ydata + new_height * rely])
+        self.ax_contours.set_aspect("equal", adjustable="datalim")
+        self._throttled_canvas_draw(self.canvas_contours, delay_ms=25)
+
 
 
     # ==================== УПРАВЛЕНИЕ ПРОЕКТАМИ В ПАПКЕ PROJECTS ====================
@@ -2756,6 +3289,8 @@ class VolumeApp(_AppBase):
         self._3d_dirty = True
         self._diff_dirty = True
         self._2d_dirty = True
+        self._contours_dirty = True
+        self._contours_view_initialized = False
 
     def _get_app_config_path(self):
         app_data = os.environ.get("LOCALAPPDATA") or get_app_dir()
@@ -4551,13 +5086,21 @@ class VolumeApp(_AppBase):
                 self._redraw_3d(res)
                 self._3d_dirty = False
                 self._diff_dirty = True
+                self._contours_dirty = True
             elif current_tab == self.TAB_DIFF:
                 self._redraw_diff(res)
                 self._diff_dirty = False
                 self._3d_dirty = True
+                self._contours_dirty = True
+            elif current_tab == getattr(self, "TAB_CONTOURS", "Горизонтали"):
+                self._redraw_contours()
+                self._contours_dirty = False
+                self._3d_dirty = True
+                self._diff_dirty = True
             else:
                 self._3d_dirty = True
                 self._diff_dirty = True
+                self._contours_dirty = True
 
             # Автосохранение результатов в текстовый файл
             self._auto_save_report(res)
@@ -4622,6 +5165,7 @@ class VolumeApp(_AppBase):
     def _update_all_views(self, reset_view=False):
         if reset_view:
             self._tin_view_initialized = False
+            self._contours_view_initialized = False
         current_tab = self.tabview.get() if hasattr(self, "tabview") else None
         self._redraw_2d(reset_view=reset_view)
         if current_tab == self.TAB_TABLE:
@@ -4635,6 +5179,12 @@ class VolumeApp(_AppBase):
             self._tin_dirty = False
         else:
             self._tin_dirty = True
+
+        if current_tab == getattr(self, "TAB_CONTOURS", "Горизонтали") and self.calc_results:
+            self._redraw_contours()
+            self._contours_dirty = False
+        else:
+            self._contours_dirty = True
 
         if current_tab == self.TAB_3D and self.calc_results:
             self._redraw_3d(self.calc_results)
@@ -5446,6 +5996,7 @@ class VolumeApp(_AppBase):
             self._3d_dirty = True
             self._diff_dirty = True
             self._tin_dirty = True
+            self._contours_dirty = True
         elif current_tab == self.TAB_3D:
             if self.calc_results:
                 self._redraw_3d(self.calc_results)
@@ -5453,6 +6004,7 @@ class VolumeApp(_AppBase):
             self._2d_dirty = True
             self._diff_dirty = True
             self._tin_dirty = True
+            self._contours_dirty = True
         elif current_tab == self.TAB_DIFF:
             if self.calc_results:
                 self._redraw_diff(self.calc_results)
@@ -5460,17 +6012,28 @@ class VolumeApp(_AppBase):
             self._2d_dirty = True
             self._3d_dirty = True
             self._tin_dirty = True
+            self._contours_dirty = True
         elif current_tab == self.TAB_TIN:
             self._redraw_tin()
             self._tin_dirty = False
             self._2d_dirty = True
             self._3d_dirty = True
             self._diff_dirty = True
+            self._contours_dirty = True
+        elif current_tab == getattr(self, "TAB_CONTOURS", "Горизонтали"):
+            if self.calc_results:
+                self._redraw_contours()
+                self._contours_dirty = False
+            self._2d_dirty = True
+            self._3d_dirty = True
+            self._diff_dirty = True
+            self._tin_dirty = True
         else:
             self._redraw_2d()
             self._3d_dirty = True
             self._diff_dirty = True
             self._tin_dirty = True
+            self._contours_dirty = True
         self._lift_canvas_overlays()
 
     def _redraw_3d(self, r: dict):
@@ -6061,6 +6624,8 @@ class VolumeApp(_AppBase):
             self._save_tab_image(self.fig_diff, self.TAB_DIFF)
         elif curr_tab == self.TAB_TIN:
             self._save_tab_image(self.fig_tin, self.TAB_TIN)
+        elif curr_tab == getattr(self, "TAB_CONTOURS", "Горизонтали"):
+            self._save_tab_image(self.fig_contours, self.TAB_CONTOURS)
 
     # ==================== TIN ТРЕУГОЛЬНИКИ ====================
 
@@ -6778,6 +7343,18 @@ class VolumeApp(_AppBase):
                     self._tin_dirty = False
                 elif hasattr(self, "canvas_tin") and self.canvas_tin is not None:
                     self._fit_tin_view()
+            elif selected_tab == getattr(self, "TAB_CONTOURS", "Горизонтали"):
+                if getattr(self, "_contours_dirty", False) and self.calc_results:
+                    self._redraw_contours()
+                    self._contours_dirty = False
+                elif not getattr(self, "_contours_view_initialized", False) and self.calc_results:
+                    self._redraw_contours()
+                    self._contours_dirty = False
+                else:
+                    if hasattr(self, "fig_contours") and self.fig_contours is not None:
+                        self._apply_fig_layout(self.fig_contours, pad=0.5)
+                    if hasattr(self, "canvas_contours") and self.canvas_contours is not None:
+                        self.canvas_contours.draw_idle()
             elif selected_tab == self.TAB_TABLE:
                 if getattr(self, "_table_dirty", False):
                     self._update_table()

@@ -23,8 +23,9 @@ def create_mock_app():
     app.TAB_2D = "2D Схема в плане"
     app.TAB_3D = "3D Поверхности"
     app.TAB_DIFF = "Картограмма масс"
-    app.TAB_TABLE = "Таблица точек"
     app.TAB_TIN = "TIN Триангуляция"
+    app.TAB_CONTOURS = "Горизонтали"
+    app.TAB_TABLE = "Таблица точек"
 
     # Инициализация dirty-флагов и таймеров из __init__
     app._tin_dirty = False
@@ -32,6 +33,7 @@ def create_mock_app():
     app._3d_dirty = False
     app._diff_dirty = False
     app._2d_dirty = False
+    app._contours_dirty = False
     app._auto_save_timer = None
     app._boundary_calc_timer = None
     app._current_file_path = "test.txt"
@@ -44,6 +46,7 @@ def create_mock_app():
     app._update_2d_selection_only = MagicMock()
     app._update_table = MagicMock()
     app._redraw_tin = MagicMock()
+    app._redraw_contours = MagicMock()
     app._redraw_3d = MagicMock()
     app._redraw_diff = MagicMock()
     app._lift_canvas_overlays = MagicMock()
