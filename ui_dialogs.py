@@ -1110,17 +1110,9 @@ class ToolTip:
             if not self.widget.winfo_exists():
                 return
 
-            x = self.widget.winfo_rootx() + 8
-            y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
-
-            screen_w = self.widget.winfo_screenwidth()
-            screen_h = self.widget.winfo_screenheight()
-            if y + 32 > screen_h:
-                y = self.widget.winfo_rooty() - 28
-
             self._tip_window = tw = tk.Toplevel(self.widget)
             tw.wm_overrideredirect(True)
-            tw.wm_geometry(f"+{x}+{y}")
+            tw.withdraw()
             try:
                 tw.attributes("-topmost", True)
             except Exception:
@@ -1144,6 +1136,27 @@ class ToolTip:
                 pady=3
             )
             label.pack()
+            tw.update_idletasks()
+
+            tip_w = tw.winfo_reqwidth()
+            tip_h = tw.winfo_reqheight()
+
+            screen_w = self.widget.winfo_screenwidth()
+            screen_h = self.widget.winfo_screenheight()
+
+            x = self.widget.winfo_rootx() + 8
+            y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+
+            if x + tip_w + 12 > screen_w:
+                x = screen_w - tip_w - 12
+            x = max(8, x)
+
+            if y + tip_h + 12 > screen_h:
+                y = self.widget.winfo_rooty() - tip_h - 4
+            y = max(4, y)
+
+            tw.wm_geometry(f"+{x}+{y}")
+            tw.deiconify()
         except Exception:
             self._hide_tip()
 

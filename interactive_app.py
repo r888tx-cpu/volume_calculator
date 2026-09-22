@@ -500,13 +500,23 @@ class VolumeApp(_AppBase):
 
         self.btn_theme_toggle_left = ctk.CTkButton(
             header_bar,
-            text="🌓 Тёмная / Светлая тема",
+            text="🌓 Тема",
             height=26,
             font=ctk.CTkFont(size=11),
             command=self._toggle_app_theme
         )
-        self.btn_theme_toggle_left.pack(side=tk.RIGHT, fill=tk.X, expand=True)
+        self.btn_theme_toggle_left.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
         add_tooltip(self.btn_theme_toggle_left, "Переключить тему оформления (Тёмная / Светлая)")
+
+        self.btn_readme = ctk.CTkButton(
+            header_bar,
+            text="📖 Справка",
+            height=26,
+            font=ctk.CTkFont(size=11),
+            command=self._open_readme
+        )
+        self.btn_readme.pack(side=tk.RIGHT, fill=tk.X, expand=True)
+        add_tooltip(self.btn_readme, "Открыть подробное иллюстрированное руководство пользователя (HTML)")
 
         # Внутренний scrollable контейнер для левой панели (гарантирует что всё влезет!)
         inner = ctk.CTkScrollableFrame(self.left_frame, fg_color="transparent")
@@ -938,7 +948,7 @@ class VolumeApp(_AppBase):
             pass
 
         try:
-            ax.tick_params(colors=fg_col, which="both", labelsize=10)
+            ax.tick_params(colors=fg_col, which="both", labelsize=9)
             spines = getattr(ax, "spines", {})
             if isinstance(spines, dict):
                 for spine in spines.values():
@@ -946,13 +956,29 @@ class VolumeApp(_AppBase):
             if hasattr(ax, "xaxis"):
                 if hasattr(ax.xaxis, "label"):
                     ax.xaxis.label.set_color(fg_col)
+                    try:
+                        ax.xaxis.label.set_size(9)
+                    except Exception:
+                        pass
                 if hasattr(ax.xaxis, "offsetText"):
                     ax.xaxis.offsetText.set_color(fg_col)
+                    try:
+                        ax.xaxis.offsetText.set_size(9)
+                    except Exception:
+                        pass
             if hasattr(ax, "yaxis"):
                 if hasattr(ax.yaxis, "label"):
                     ax.yaxis.label.set_color(fg_col)
+                    try:
+                        ax.yaxis.label.set_size(9)
+                    except Exception:
+                        pass
                 if hasattr(ax.yaxis, "offsetText"):
                     ax.yaxis.offsetText.set_color(fg_col)
+                    try:
+                        ax.yaxis.offsetText.set_size(9)
+                    except Exception:
+                        pass
             for title_attr in ("title", "_left_title", "_right_title"):
                 t = getattr(ax, title_attr, None)
                 if t is not None:
@@ -1120,42 +1146,6 @@ class VolumeApp(_AppBase):
 
         # Настройка двойного щелчка по названию вкладки для разворачивания на весь экран
         self._setup_tab_double_click()
-
-        # Кнопка «Справка (HTML)» и переключатель темы в строке выбора вкладок
-        self.btn_readme = ctk.CTkButton(
-            self.tabview,
-            text="📖 Справка (HTML)",
-            command=self._open_readme,
-            fg_color=("#dee2e6", "#282c30"),
-            hover_color=("#ced4da", "#33383e"),
-            text_color=("#212529", "#f8f9fa"),
-            width=130,
-            height=28,
-            corner_radius=6,
-            border_width=1,
-            border_color=("#ced4da", "#495057"),
-            font=ctk.CTkFont(size=11, weight="bold"),
-        )
-        self.btn_readme.place(relx=1.0, y=6, anchor="ne", x=-52)
-        add_tooltip(self.btn_readme, "Открыть подробное иллюстрированное руководство пользователя (HTML)")
-
-        # Переключатель темы: справа от «Справка (HTML)»
-        self.btn_theme_toggle = ctk.CTkButton(
-            self.tabview,
-            text="🌓",
-            command=self._toggle_app_theme,
-            fg_color=("#dee2e6", "#282c30"),
-            hover_color=("#ced4da", "#33383e"),
-            text_color=("#212529", "#f8f9fa"),
-            border_color=("#ced4da", "#495057"),
-            width=38,
-            height=28,
-            corner_radius=6,
-            border_width=1,
-            font=ctk.CTkFont(size=13, weight="bold"),
-        )
-        self.btn_theme_toggle.place(relx=1.0, y=6, anchor="ne", x=-8)
-        add_tooltip(self.btn_theme_toggle, "Переключить тему оформления (Тёмная / Светлая)")
 
         # Заменяем tabview.set на безопасный метод без задержек after(100), вызывающих скрытие вкладок
         self.tabview.set = self._select_tab
@@ -1478,21 +1468,10 @@ class VolumeApp(_AppBase):
 
 
     def _format_coord_display(self, y_east, x_north):
-        """Правильный формат координат курсора с автоматическим отображением инспекции точки под курсором"""
+        """Формат координат курсора на холсте (Север X, Восток Y)."""
         if y_east is None or x_north is None:
             return ""
-        coord_str = f"X (Север): {x_north:.3f},  Y (Восток): {y_east:.3f}"
-        if getattr(self, "points", None):
-            try:
-                min_idx, min_dist = self._find_nearest_point(y_east, x_north)
-                tol = self._get_click_tolerance()
-                if min_idx != -1 and min_dist <= tol and 0 <= min_idx < len(self.points):
-                    p = self.points[min_idx]
-                    surf_name = "Верх" if p.surface_type == "top" else ("Низ" if p.surface_type == "bottom" else p.surface_type)
-                    return f"[Точка {p.id}: H={p.h:.3f} ({surf_name})]   {coord_str}"
-            except Exception:
-                pass
-        return coord_str
+        return f"X (Север): {x_north:.3f},  Y (Восток): {y_east:.3f}"
 
     def _format_coord_diff(self, y_east, x_north):
         """Быстрое отображение координат и фактической высоты/мощности слоя под курсором на картограмме (O(1))."""
@@ -2023,7 +2002,6 @@ class VolumeApp(_AppBase):
 
         self.fig_3d = Figure(figsize=(6, 5), dpi=100)
         self.ax_3d = self.fig_3d.add_subplot(111, projection="3d")
-        self.ax_3d.set_title("3D Модель верхней и нижней поверхностей", color=title_color)
         self.ax_3d.set_xlabel("Y (Восток)", color=title_color)
         self.ax_3d.set_ylabel("X (Север)", color=title_color)
         self.ax_3d.set_zlabel("H (Высота)", color=title_color)
@@ -2048,7 +2026,6 @@ class VolumeApp(_AppBase):
 
         self.fig_diff = Figure(figsize=(6, 5), dpi=100)
         self.ax_diff = self.fig_diff.add_subplot(111)
-        self.ax_diff.set_title("Картограмма мощности слоя (Z_верх - Z_низ)", loc="left", pad=12, color=title_color)
         self.ax_diff.set_xlabel("Восток Y (м)", color=title_color)
         self.ax_diff.set_ylabel("Север X (м)", color=title_color)
         self.ax_diff.grid(True, linestyle="--", alpha=0.5)
@@ -2300,19 +2277,12 @@ class VolumeApp(_AppBase):
                     textvariable=self._tin_max_iter, width=5,
                     font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=(2, 2))
 
-        self.paned_tin = ttk.PanedWindow(self.tab_tin, orient=tk.VERTICAL)
-        self.paned_tin.pack(fill=tk.BOTH, expand=True)
-
-        canvas_frame = ttk.Frame(self.paned_tin)
-        self.paned_tin.add(canvas_frame, weight=3)
-
         is_dark = (ctk.get_appearance_mode() == "Dark") if hasattr(ctk, "get_appearance_mode") else False
         title_color = "#e0e0e0" if is_dark else "#212529"
         fig_bg = "#212529" if is_dark else "#ffffff"
 
         self.fig_tin = Figure(figsize=(6, 4), dpi=100)
         self.ax_tin = self.fig_tin.add_subplot(111)
-        self.ax_tin.set_title("TIN Триангуляция точек (Делоне)", loc="left", pad=12, color=title_color)
         self.ax_tin.set_xlabel("Восток Y (м)", color=title_color)
         self.ax_tin.set_ylabel("Север X (м)", color=title_color)
         self.ax_tin.grid(True, linestyle="--", alpha=0.4)
@@ -2321,7 +2291,7 @@ class VolumeApp(_AppBase):
         self.ax_tin.yaxis.set_major_formatter(PlainOffsetFormatter(useOffset=True))
         self._apply_axes_theme(self.ax_tin, self.fig_tin, is_dark)
 
-        self.canvas_tin = FigureCanvasTkAgg(self.fig_tin, master=canvas_frame)
+        self.canvas_tin = FigureCanvasTkAgg(self.fig_tin, master=self.tab_tin)
         cw_tin = self.canvas_tin.get_tk_widget()
         cw_tin.configure(bg=fig_bg)
         cw_tin.pack(fill=tk.BOTH, expand=True)
@@ -2338,41 +2308,10 @@ class VolumeApp(_AppBase):
         self.canvas_tin.mpl_connect("motion_notify_event", self._on_tin_canvas_motion)
         self.canvas_tin.mpl_connect("scroll_event", self._on_tin_canvas_scroll)
 
-        # 3. Нижняя часть — таблица треугольников
-        self._tin_bottom_frame = ttk.Frame(self.paned_tin)
-        self.paned_tin.add(self._tin_bottom_frame, weight=1)
-
-        tbl_container_tin = ttk.Frame(self._tin_bottom_frame)
-        tbl_container_tin.pack(fill=tk.BOTH, expand=True)
-
-        tin_cols = ("tri_idx", "v1", "v2", "v3", "area", "status")
-        self.tree_tin = ttk.Treeview(tbl_container_tin, columns=tin_cols, show="headings",
-                                      height=6, selectmode="browse")
-        self.tree_tin.heading("tri_idx", text="№")
-        self.tree_tin.heading("v1", text="Верш. 1")
-        self.tree_tin.heading("v2", text="Верш. 2")
-        self.tree_tin.heading("v3", text="Верш. 3")
-        self.tree_tin.heading("area", text="Площадь м²")
-        self.tree_tin.heading("status", text="Статус")
-
-        self.tree_tin.column("tri_idx", width=40, anchor=tk.CENTER)
-        self.tree_tin.column("v1", width=80, anchor=tk.CENTER)
-        self.tree_tin.column("v2", width=80, anchor=tk.CENTER)
-        self.tree_tin.column("v3", width=80, anchor=tk.CENTER)
-        self.tree_tin.column("area", width=100, anchor=tk.E)
-        self.tree_tin.column("status", width=90, anchor=tk.CENTER)
-
-        scrollbar_tin = ttk.Scrollbar(tbl_container_tin, orient=tk.VERTICAL, command=self.tree_tin.yview)
-        self.tree_tin.configure(yscroll=scrollbar_tin.set)
-        self.tree_tin.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar_tin.pack(side=tk.RIGHT, fill=tk.Y)
-
-        is_dark = ctk.get_appearance_mode() == "Dark"
-        self.tree_tin.tag_configure("excluded", foreground="#ff6b6b" if is_dark else "#c0392b",
-                                    background="#3d2020" if is_dark else "#fdf2f2")
-        self.tree_tin.tag_configure("active", foreground="#ffffff" if is_dark else "#212529")
-        self.tree_tin.bind("<<TreeviewSelect>>", self._on_tin_table_select)
-        self.tree_tin.bind("<Double-1>", lambda e: self._tin_toggle_selected())
+        # Скрытые объекты для совместимости с внешними вызовами и методами
+        self.paned_tin = None
+        self._tin_bottom_frame = None
+        self.tree_tin = None
 
 
 
@@ -3496,45 +3435,8 @@ class VolumeApp(_AppBase):
         elif N == 2:
             insert_pos = 1
         else:
-            service = self._get_spatial_service()
-            best_k, edge_dist = service.find_nearest_boundary_edge_with_dist(min_idx, self.boundary_indices)
+            best_k = self._find_nearest_boundary_edge(min_idx)
             insert_pos = best_k + 1
-
-            # 1. Проверка на нахождение внутри контура и контроль перепада высот
-            path = self._get_boundary_path()
-            pt = self.points[min_idx]
-            tol = self._get_click_tolerance()
-            is_inside = (path is not None and path.contains_point((pt.x, pt.y)))
-
-            p_edge1 = self.points[self.boundary_indices[best_k]]
-            p_edge2 = self.points[self.boundary_indices[(best_k + 1) % N]]
-            mean_edge_h = 0.5 * (p_edge1.h + p_edge2.h)
-            delta_h = pt.h - mean_edge_h
-
-            if (is_inside and edge_dist > max(0.4, tol * 0.5)) or abs(delta_h) > 1.0:
-                h_diff_str = f"+{delta_h:.2f}" if delta_h > 0 else f"{delta_h:.2f}"
-                confirm_msg = (
-                    f"Точка #{min_idx + 1} (ID: {pt.id}, H: {pt.h:.3f} м) "
-                    + ("находится внутри текущего контура" if is_inside else "расположена рядом с контуром")
-                    + f" (отклонение от ребра {edge_dist:.1f} м, перепад высоты {h_diff_str} м относительно подошвы).\n\n"
-                    "Встраивание этой точки во внешний контур изменит геометрию подошвы "
-                    "и плоскость основания (дна), что повлияет на расчёт объёма.\n\n"
-                    "Вы действительно хотите добавить эту точку в контур сшивания?"
-                )
-                if not messagebox.askyesno("Встраивание точки в контур", confirm_msg, parent=self):
-                    return
-
-            # 2. Проверка на геометрическое самопересечение (петли контура)
-            trial_indices = self.boundary_indices[:insert_pos] + [min_idx] + self.boundary_indices[insert_pos:]
-            trial_coords = np.array([[self.points[i].x, self.points[i].y] for i in trial_indices], dtype=float)
-            if polygon_self_intersects(trial_coords):
-                messagebox.showwarning(
-                    "Самопересечение контура",
-                    "Добавление данной точки в выбранное ребро приводит к самопересечению линий границы (петле).\n\n"
-                    "Контур сшивания должен оставаться простым многоугольником без самопересечений.",
-                    parent=self
-                )
-                return
 
         old_type = self.points[min_idx].surface_type
         self.points[min_idx].surface_type = "boundary"
@@ -4053,42 +3955,6 @@ class VolumeApp(_AppBase):
 
         elif mode in ("select_boundary", "auto_hull"):
             if min_idx not in self.boundary_indices:
-                if len(self.boundary_indices) >= 3:
-                    path = self._get_boundary_path()
-                    pt = self.points[min_idx]
-                    tol = self._get_click_tolerance()
-                    is_inside = (path is not None and path.contains_point((pt.x, pt.y)))
-                    service = self._get_spatial_service()
-                    best_k, edge_dist = service.find_nearest_boundary_edge_with_dist(min_idx, self.boundary_indices)
-                    p_edge1 = self.points[self.boundary_indices[best_k]]
-                    p_edge2 = self.points[self.boundary_indices[(best_k + 1) % len(self.boundary_indices)]]
-                    mean_edge_h = 0.5 * (p_edge1.h + p_edge2.h)
-                    delta_h = pt.h - mean_edge_h
-
-                    if (is_inside and edge_dist > max(0.4, tol * 0.5)) or abs(delta_h) > 1.0:
-                        h_diff_str = f"+{delta_h:.2f}" if delta_h > 0 else f"{delta_h:.2f}"
-                        confirm_msg = (
-                            f"Точка #{min_idx + 1} (ID: {pt.id}, H: {pt.h:.3f} м) "
-                            + ("находится внутри текущего контура" if is_inside else "расположена рядом с контуром")
-                            + f" (отклонение от ребра {edge_dist:.1f} м, перепад высоты {h_diff_str} м относительно подошвы).\n\n"
-                            "Встраивание этой точки во внешний контур изменит геометрию подошвы "
-                            "и плоскость основания (дна), что повлияет на расчёт объёма.\n\n"
-                            "Вы действительно хотите добавить эту точку в контур сшивания?"
-                        )
-                        if not messagebox.askyesno("Добавление точки в контур", confirm_msg, parent=self):
-                            return
-
-                    trial_indices = self.boundary_indices + [min_idx]
-                    trial_coords = np.array([[self.points[i].x, self.points[i].y] for i in trial_indices], dtype=float)
-                    if polygon_self_intersects(trial_coords):
-                        messagebox.showwarning(
-                            "Самопересечение контура",
-                            "Добавление данной точки приводит к самопересечению линий границы (петле).\n\n"
-                            "Контур сшивания должен оставаться простым многоугольником без самопересечений.",
-                            parent=self
-                        )
-                        return
-
                 old_type = self.points[min_idx].surface_type
                 self.points[min_idx].surface_type = "boundary"
                 self.boundary_indices.append(min_idx)
@@ -5663,10 +5529,6 @@ class VolumeApp(_AppBase):
         self.ax_3d.clear()
         is_dark = (ctk.get_appearance_mode() == "Dark") if hasattr(ctk, "get_appearance_mode") else False
         title_color = "#e0e0e0" if is_dark else "#212529"
-        label_parts = []
-        if show_top:    label_parts.append("Верхняя")
-        if show_bottom: label_parts.append("Нижняя")
-        self.ax_3d.set_title("3D Поверхности: " + (" + ".join(label_parts) if label_parts else "—"), color=title_color)
         self.ax_3d.set_xlabel("Y (Восток, м)", color=title_color)
         self.ax_3d.set_ylabel("X (Север, м)", color=title_color)
         self.ax_3d.set_zlabel("H (Высота, м)", color=title_color)
@@ -5846,7 +5708,6 @@ class VolumeApp(_AppBase):
             cb_label  = label_lower
             title     = title_lower
         else:
-            self.ax_diff.set_title("Картограмма — поверхности отключены", loc="left", pad=12, color=title_color)
             self._apply_axes_theme(self.ax_diff, self.fig_diff, is_dark)
             if len(self.boundary_indices) >= 3 and r.get("boundary") is not None:
                 b_pts = r["boundary"]
@@ -5859,7 +5720,6 @@ class VolumeApp(_AppBase):
             self.canvas_diff.draw()
             return
 
-        self.ax_diff.set_title(title, loc="left", pad=12, color=title_color)
         self._apply_axes_theme(self.ax_diff, self.fig_diff, is_dark)
 
         # Формируем полигон контура для строгой векторной обрезки (исключает любые артефакты снаружи)
@@ -6585,7 +6445,6 @@ class VolumeApp(_AppBase):
             self.ax_tin.clear()
             is_dark = (ctk.get_appearance_mode() == "Dark") if hasattr(ctk, "get_appearance_mode") else False
             title_color = "#e0e0e0" if is_dark else "#212529"
-            self.ax_tin.set_title("TIN Триангуляция точек (Делоне)", loc="left", pad=12, color=title_color)
             self.ax_tin.set_xlabel("Восток Y (м)", color=title_color)
             self.ax_tin.set_ylabel("Север X (м)", color=title_color)
             self._apply_axes_theme(self.ax_tin, self.fig_tin, is_dark)
@@ -6597,12 +6456,13 @@ class VolumeApp(_AppBase):
         self.ax_tin.yaxis.set_major_formatter(PlainOffsetFormatter(useOffset=True))
 
         # Очистка таблицы
-        try:
-            self._tin_updating_selection = True
-            for item in self.tree_tin.get_children():
-                self.tree_tin.delete(item)
-        finally:
-            self._tin_updating_selection = False
+        if getattr(self, "tree_tin", None) is not None:
+            try:
+                self._tin_updating_selection = True
+                for item in self.tree_tin.get_children():
+                    self.tree_tin.delete(item)
+            finally:
+                self._tin_updating_selection = False
 
         if not self.points:
             self.lbl_tin_stats.configure(text="Точки не загружены")
@@ -6805,11 +6665,13 @@ class VolumeApp(_AppBase):
                     self.ax_tin.scatter(lower_ys, lower_xs, color="#1565c0", s=14, zorder=5,
                                         edgecolors="#0d47a1", linewidth=0.5)
 
-        # 4. Заполнение таблицы треугольников
+        # 4. Заполнение статистики и (при наличии) таблицы треугольников
+        has_tree = getattr(self, "tree_tin", None) is not None
         try:
-            self._tin_updating_selection = True
-            for item in self.tree_tin.get_children():
-                self.tree_tin.delete(item)
+            if has_tree:
+                self._tin_updating_selection = True
+                for item in self.tree_tin.get_children():
+                    self.tree_tin.delete(item)
 
             if show_main_tin:
                 n_active = 0
@@ -6832,20 +6694,20 @@ class VolumeApp(_AppBase):
                         tag = "active"
                         n_active += 1
 
-                    if i < max_tree_items or i == self._tin_selected_idx:
+                    if has_tree and (i < max_tree_items or i == self._tin_selected_idx):
                         self.tree_tin.insert("", tk.END, iid=str(i),
                                               values=(i + 1, p0.id, p1.id, p2.id, f"{area:.3f}", status),
                                               tags=(tag,))
 
                 excl = len(self._tin_excluded)
-                if total > max_tree_items:
+                if has_tree and total > max_tree_items:
                     self.lbl_tin_stats.configure(
                         text=f"Всего: {total} (в таблице первые {max_tree_items}) | Активных: {n_active} | Исключено: {excl}")
                 else:
                     self.lbl_tin_stats.configure(
                         text=f"Всего: {total} | Активных: {n_active} | Исключено: {excl}")
 
-                if self._tin_selected_idx is not None and str(self._tin_selected_idx) in self.tree_tin.get_children():
+                if has_tree and self._tin_selected_idx is not None and str(self._tin_selected_idx) in self.tree_tin.get_children():
                     try:
                         self.tree_tin.selection_set(str(self._tin_selected_idx))
                         self.tree_tin.see(str(self._tin_selected_idx))
@@ -6859,7 +6721,8 @@ class VolumeApp(_AppBase):
                 else:
                     self.lbl_tin_stats.configure(text="Нижняя поверхность (без треугольников)")
         finally:
-            self._tin_updating_selection = False
+            if has_tree:
+                self._tin_updating_selection = False
 
         # 5. Масштабирование / сохранение вида
         if not reset_view and getattr(self, "_tin_view_initialized", False) and old_xlim and old_ylim:
@@ -6872,22 +6735,41 @@ class VolumeApp(_AppBase):
 
     def _open_tin_table_dialog(self):
         """Открывает отдельное диалоговое окно со списком всех треугольников TIN"""
-        if self._tin_simplices is None or len(self._tin_simplices) == 0:
-            self._rebuild_tin()
-        TINTableDialog(self, app=self)
+        if (getattr(self, "_tin_simplices", None) is None or len(self._tin_simplices) == 0) and len(getattr(self, "boundary_indices", [])) >= 3:
+            try:
+                self._redraw_tin(reset_view=False)
+            except Exception:
+                pass
+
+        pts = getattr(self, "points", None)
+        tris = getattr(self, "_tin_simplices", None)
+        if tris is None or len(tris) == 0:
+            tris = getattr(self, "_tin_calc_triangles", None) or getattr(self, "_tin_triangles", None)
+
+        if pts is None or tris is None or len(tris) == 0:
+            from tkinter import messagebox
+            messagebox.showinfo("TIN Триангуляция", "Сетка треугольников еще не построена.\nСначала выполните триангуляцию.", parent=self)
+            return
+
+        def on_toggle(idx):
+            if idx in self._tin_excluded:
+                self._tin_excluded.discard(idx)
+            else:
+                self._tin_excluded.add(idx)
+            self._redraw_tin(reset_view=False)
+
+        TINTableDialog(
+            parent=self,
+            app=self,
+            points=pts,
+            triangles=tris,
+            excluded_set=self._tin_excluded,
+            on_toggle_callback=on_toggle
+        )
 
     def _toggle_tin_table(self):
-        """Скрытие / отображение таблицы треугольников для максимизации области схемы TIN"""
-        if getattr(self, "_tin_table_visible", True):
-            self.paned_tin.forget(self._tin_bottom_frame)
-            self._tin_table_visible = False
-            if getattr(self, "btn_toggle_tin_table", None):
-                self.btn_toggle_tin_table.configure(text="▼ Список")
-        else:
-            self.paned_tin.add(self._tin_bottom_frame, weight=1)
-            self._tin_table_visible = True
-            if getattr(self, "btn_toggle_tin_table", None):
-                self.btn_toggle_tin_table.configure(text="▲ Список")
+        """Открывает диалоговое окно со списком треугольников TIN"""
+        self._open_tin_table_dialog()
 
     def _fit_tin_view(self):
         """Устанавливает масштаб и границы ax_tin точно в фокус отображаемых данных"""
