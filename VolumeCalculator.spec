@@ -1,5 +1,25 @@
 # -*- mode: python ; coding: utf-8 -*-
 import shutil, os
+import PyInstaller.building.api as _pyi_api
+import PyInstaller.building.utils as _pyi_utils
+_orig_clean_dir = _pyi_api._make_clean_directory
+def _safe_clean_dir(path):
+    try:
+        _orig_clean_dir(path)
+    except OSError:
+        if os.path.isdir(path):
+            for item in os.listdir(path):
+                p = os.path.join(path, item)
+                try:
+                    if os.path.isdir(p):
+                        shutil.rmtree(p, ignore_errors=True)
+                    else:
+                        os.remove(p)
+                except Exception:
+                    pass
+        os.makedirs(path, exist_ok=True)
+_pyi_api._make_clean_directory = _safe_clean_dir
+_pyi_utils._make_clean_directory = _safe_clean_dir
 from PyInstaller.utils.hooks import collect_data_files
 
 datas = [
