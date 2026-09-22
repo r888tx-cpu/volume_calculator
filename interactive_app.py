@@ -641,67 +641,6 @@ class VolumeApp(_AppBase):
         b_split.pack(side=tk.RIGHT, expand=True, fill=tk.X)
         add_tooltip(b_split, "Автоматически разделить точки на верхнюю и нижнюю поверхности по перепаду высот")
 
-        # Компактный блок статуса и действий с выделенными точками на боковой панели (отображается только при наличии выделенных точек)
-        self.frame_sidebar_sel = ctk.CTkFrame(grp_contour, fg_color="transparent")
-        self.lbl_sidebar_selection = ctk.CTkLabel(
-            self.frame_sidebar_sel,
-            text="",
-            font=ctk.CTkFont(size=10, weight="bold"),
-            text_color=("#d35400", "#e67e22"),
-            anchor="w",
-            height=16
-        )
-        self.lbl_sidebar_selection.pack(side=tk.LEFT, fill=tk.X, expand=True)
-
-        self.btn_side_sel_bot = ctk.CTkButton(
-            self.frame_sidebar_sel,
-            text="▼ Низ",
-            width=46,
-            height=20,
-            fg_color="#d35400",
-            hover_color="#a04000",
-            text_color="#ffffff",
-            font=ctk.CTkFont(size=9, weight="bold"),
-            command=lambda: self._batch_assign_surface("bottom")
-        )
-        self.btn_side_sel_top = ctk.CTkButton(
-            self.frame_sidebar_sel,
-            text="▲ Верх",
-            width=46,
-            height=20,
-            fg_color="#1565c0",
-            hover_color="#0d3b7a",
-            text_color="#ffffff",
-            font=ctk.CTkFont(size=9, weight="bold"),
-            command=lambda: self._batch_assign_surface("top")
-        )
-        self.btn_side_sel_del = ctk.CTkButton(
-            self.frame_sidebar_sel,
-            text="❌",
-            width=22,
-            height=20,
-            fg_color="#c0392b",
-            hover_color="#962d22",
-            text_color="#ffffff",
-            font=ctk.CTkFont(size=9),
-            command=lambda: self._delete_point(-1)
-        )
-        self.btn_side_sel_clear = ctk.CTkButton(
-            self.frame_sidebar_sel,
-            text="✕",
-            width=22,
-            height=20,
-            fg_color="gray45",
-            hover_color="gray35",
-            text_color="#ffffff",
-            font=ctk.CTkFont(size=9),
-            command=self._clear_selected_points
-        )
-        add_tooltip(self.btn_side_sel_bot, "Назначить выделенные точки на нижнюю поверхность")
-        add_tooltip(self.btn_side_sel_top, "Назначить выделенные точки на верхнюю поверхность")
-        add_tooltip(self.btn_side_sel_del, "Удалить выделенные точки из проекта")
-        add_tooltip(self.btn_side_sel_clear, "Снять выделение со всех точек")
-
         self.lbl_contour_hint = ctk.CTkLabel(
             grp_contour,
             text="💡 Shift+ЛКМ — рамка | 2×ЛКМ — в ребро | ПКМ — тянуть",
@@ -4152,22 +4091,12 @@ class VolumeApp(_AppBase):
             self._schedule_boundary_calc(400)
 
     def _update_selection_bar(self):
-        """Обновляет видимость и статус плавающей панели выделенных точек и боковой панели"""
+        """Обновляет видимость и статус плавающей панели выделенных точек на 2D холсте"""
         if not hasattr(self, "frame_selection_bar"):
             return
         n = len(getattr(self, "_selected_points", set()))
         if n == 0:
             self.frame_selection_bar.place_forget()
-            if hasattr(self, "frame_sidebar_sel"):
-                self.frame_sidebar_sel.pack_forget()
-            if hasattr(self, "lbl_sidebar_selection"):
-                self.lbl_sidebar_selection.configure(text="")
-            if hasattr(self, "btn_side_sel_bot"):
-                self.btn_side_sel_bot.pack_forget()
-                self.btn_side_sel_top.pack_forget()
-                if hasattr(self, "btn_side_sel_del"):
-                    self.btn_side_sel_del.pack_forget()
-                self.btn_side_sel_clear.pack_forget()
             return
 
         self.lbl_sel_count.configure(text=f"Выделено: {n} т.")
@@ -4177,21 +4106,6 @@ class VolumeApp(_AppBase):
             self.frame_selection_bar.lift()
         else:
             self.frame_selection_bar.place_forget()
-
-        if hasattr(self, "frame_sidebar_sel"):
-            if hasattr(self, "lbl_contour_hint"):
-                self.frame_sidebar_sel.pack(fill=tk.X, pady=(1, 1), before=self.lbl_contour_hint)
-            else:
-                self.frame_sidebar_sel.pack(fill=tk.X, pady=(1, 1))
-
-        if hasattr(self, "lbl_sidebar_selection"):
-            self.lbl_sidebar_selection.configure(text=f"Выделено: {n} т.")
-            if hasattr(self, "btn_side_sel_bot"):
-                self.btn_side_sel_bot.pack(side=tk.LEFT, padx=(0, 2))
-                self.btn_side_sel_top.pack(side=tk.LEFT, padx=(0, 2))
-                if hasattr(self, "btn_side_sel_del"):
-                    self.btn_side_sel_del.pack(side=tk.LEFT, padx=(0, 2))
-                self.btn_side_sel_clear.pack(side=tk.LEFT)
 
     def _batch_assign_surface(self, target_surf: str):
         """Пакетное назначение выбранным точкам целевой поверхности ('top' или 'bottom')"""

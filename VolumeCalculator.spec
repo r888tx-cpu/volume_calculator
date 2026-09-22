@@ -14,6 +14,7 @@ datas = [
     ('readme.html', '.'),
     ('report_icon.png', '.'),
     ('report_icon_large.png', '.'),
+    ('Projects', 'Projects'),
 ]
 datas += collect_data_files('customtkinter')
 datas += collect_data_files('tkinterdnd2')
@@ -74,8 +75,11 @@ coll = COLLECT(
     name='GeoVolumePro',
 )
 
-# Копируем readme.html и app_icon.ico в корень дистрибутива рядом с exe (все ресурсы и иконки находятся в _internal)
+# Копируем readme.html, app_icon.ico и реальные проекты Projects в корень дистрибутива рядом с exe
 _dist_root = os.path.join(DISTPATH, 'GeoVolumePro')
 os.makedirs(_dist_root, exist_ok=True)
 shutil.copy('readme.html', os.path.join(_dist_root, 'readme.html'))
 shutil.copy('app_icon.ico', os.path.join(_dist_root, 'app_icon.ico'))
+_dist_projects = os.path.join(_dist_root, 'Projects')
+if os.path.exists('Projects'):
+    shutil.copytree('Projects', _dist_projects, dirs_exist_ok=True)
