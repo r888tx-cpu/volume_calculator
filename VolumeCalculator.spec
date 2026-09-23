@@ -52,6 +52,17 @@ a = Analysis(
     hooksconfig={},
     runtime_hooks=['pyinstaller_runtime_hook.py'],
     excludes=[
+        'PySide6',
+        'PySide6.QtCore',
+        'PySide6.QtGui',
+        'PySide6.QtWidgets',
+        'PySide6.QtNetwork',
+        'shiboken6',
+        'PyQt5',
+        'PyQt6',
+        'qfluentwidgets',
+        'qframelesswindow',
+        'ezdxf.addons.xqt',
         'scipy.signal',
         'scipy.stats',
         'scipy.integrate',
@@ -67,6 +78,37 @@ a = Analysis(
     noarchive=False,
     optimize=2,
 )
+
+excluded_bin_patterns = [
+    'pyside6',
+    'shiboken6',
+    'qt6',
+    'opengl32sw',
+    'libcrypto',
+    'libssl',
+    '_ssl',
+]
+
+filtered_binaries = []
+for b in a.binaries:
+    dest = b[0].lower()
+    if any(p in dest for p in excluded_bin_patterns):
+        continue
+    filtered_binaries.append(b)
+
+excluded_data_patterns = [
+    'pyside6',
+    'translations/qt',
+    'translations\\qt',
+]
+
+filtered_datas = []
+for d in a.datas:
+    dest = d[0].lower()
+    if any(p in dest for p in excluded_data_patterns):
+        continue
+    filtered_datas.append(d)
+
 pyz = PYZ(a.pure)
 
 exe = EXE(
@@ -90,8 +132,8 @@ exe = EXE(
 )
 coll = COLLECT(
     exe,
-    a.binaries,
-    a.datas,
+    filtered_binaries,
+    filtered_datas,
     strip=False,
     upx=False,
     upx_exclude=[],
