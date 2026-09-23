@@ -124,6 +124,38 @@ def test_heuristic_rejects_large_single_surface_with_sparse_slopes():
     assert app._detect_two_surfaces_heuristic() is False
 
 
+def test_heuristic_rejects_8_point_embankment_and_pit_with_slopes():
+    # 8-point embankment with steep slopes (20x20 base, 16x16 top, h=102, 2m slope)
+    app_emb = VolumeApp.__new__(VolumeApp)
+    app_emb.points = [
+        GeoPoint(id="1", x=0.0, y=0.0, h=100.0, surface_type="auto"),
+        GeoPoint(id="2", x=20.0, y=0.0, h=100.0, surface_type="auto"),
+        GeoPoint(id="3", x=20.0, y=20.0, h=100.0, surface_type="auto"),
+        GeoPoint(id="4", x=0.0, y=20.0, h=100.0, surface_type="auto"),
+        GeoPoint(id="5", x=2.0, y=2.0, h=102.0, surface_type="auto"),
+        GeoPoint(id="6", x=18.0, y=2.0, h=102.0, surface_type="auto"),
+        GeoPoint(id="7", x=18.0, y=18.0, h=102.0, surface_type="auto"),
+        GeoPoint(id="8", x=2.0, y=18.0, h=102.0, surface_type="auto"),
+    ]
+    app_emb._invalidate_boundary_cache()
+    assert app_emb._detect_two_surfaces_heuristic() is False
+
+    # 8-point excavation pit with steep slopes (20x20 top, 16x16 bot, h=100, 2m slope)
+    app_pit = VolumeApp.__new__(VolumeApp)
+    app_pit.points = [
+        GeoPoint(id="1", x=0.0, y=0.0, h=102.0, surface_type="auto"),
+        GeoPoint(id="2", x=20.0, y=0.0, h=102.0, surface_type="auto"),
+        GeoPoint(id="3", x=20.0, y=20.0, h=102.0, surface_type="auto"),
+        GeoPoint(id="4", x=0.0, y=20.0, h=102.0, surface_type="auto"),
+        GeoPoint(id="5", x=2.0, y=2.0, h=100.0, surface_type="auto"),
+        GeoPoint(id="6", x=18.0, y=2.0, h=100.0, surface_type="auto"),
+        GeoPoint(id="7", x=18.0, y=18.0, h=100.0, surface_type="auto"),
+        GeoPoint(id="8", x=2.0, y=18.0, h=100.0, surface_type="auto"),
+    ]
+    app_pit._invalidate_boundary_cache()
+    assert app_pit._detect_two_surfaces_heuristic() is False
+
+
 def test_auto_classify_foundation():
     app = create_foundation_mock_app()
     app._auto_classify_initial()

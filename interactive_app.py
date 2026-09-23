@@ -5400,6 +5400,19 @@ class VolumeApp(_AppBase):
             idx_top = [i for i, h in enumerate(h_vals) if h > split_candidate]
             idx_bot = [i for i, h in enumerate(h_vals) if h <= split_candidate]
             if len(idx_top) >= 3 and len(idx_bot) >= 3:
+                # Если нет вертикальных пар, но один высотный ярус целиком окружён другим
+                # (все внешние вершины ConvexHull принадлежат только одному ярусу, а второй лежит строго внутри),
+                # то это тело с наклонными откосами (насыпь/котлован), а не две параллельные поверхности!
+                try:
+                    hull = ConvexHull(coords[:, :2])
+                    hull_indices = set(hull.vertices)
+                    top_on_hull = any(i in hull_indices for i in idx_top)
+                    bot_on_hull = any(i in hull_indices for i in idx_bot)
+                    if not (top_on_hull and bot_on_hull):
+                        return False
+                except Exception:
+                    pass
+
                 gap = float(np.min(coords[idx_top, 2]) - np.max(coords[idx_bot, 2]))
                 if gap >= 0.20:
                     bbox_top = (np.min(coords[idx_top, 0]), np.max(coords[idx_top, 0]),
