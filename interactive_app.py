@@ -3767,6 +3767,16 @@ class VolumeApp(_AppBase):
                 self.boundary_indices = list(range(len(self.points)))
         else:
             self.boundary_indices = list(range(len(self.points)))
+
+        if self._detect_two_surfaces_heuristic():
+            self._is_separate_surfaces = True
+            h_vals = [p.h for p in self.points]
+            split_candidate = (min(h_vals) + max(h_vals)) / 2.0
+            for p in self.points:
+                p.surface_type = "top" if p.h > split_candidate else "bottom"
+        else:
+            self._is_separate_surfaces = False
+
         self._invalidate_boundary_cache()
 
     def _on_mode_change(self):
@@ -3789,15 +3799,23 @@ class VolumeApp(_AppBase):
         if not self.points:
             return
         self._invalidate_boundary_cache()
-        work_type = self._detect_work_type_from_points()
-        inside_mask = self._ensure_boundary_inside_mask() if len(self.boundary_indices) >= 3 else None
-        for i, p in enumerate(self.points):
-            if i in self.boundary_indices:
-                p.surface_type = "boundary"
-            elif inside_mask is not None and not (bool(inside_mask[i]) if i < len(inside_mask) else False):
-                p.surface_type = "top" if work_type == "cut" else "bottom"
-            else:
-                p.surface_type = self._get_point_surface(p, work_type=work_type)
+        if self._detect_two_surfaces_heuristic() or getattr(self, "_is_separate_surfaces", False):
+            self._is_separate_surfaces = True
+            h_vals = [p.h for p in self.points]
+            split_candidate = (min(h_vals) + max(h_vals)) / 2.0
+            for p in self.points:
+                p.surface_type = "top" if p.h > split_candidate else "bottom"
+        else:
+            self._is_separate_surfaces = False
+            work_type = self._detect_work_type_from_points()
+            inside_mask = self._ensure_boundary_inside_mask() if len(self.boundary_indices) >= 3 else None
+            for i, p in enumerate(self.points):
+                if i in self.boundary_indices:
+                    p.surface_type = "boundary"
+                elif inside_mask is not None and not (bool(inside_mask[i]) if i < len(inside_mask) else False):
+                    p.surface_type = "top" if work_type == "cut" else "bottom"
+                else:
+                    p.surface_type = self._get_point_surface(p, work_type=work_type)
         self._tin_excluded.clear()
         self._tin_custom_simplices = None
         self._update_all_views()
@@ -5183,7 +5201,7 @@ class VolumeApp(_AppBase):
             # Приоритет: если сформированы треугольники TIN (в т.ч. пользовательские переброски),
             # рассчитываем методом TIN с точным построением картограммы и 3D
             pts_3d = np.array([[p.x, p.y, p.h] for p in self.points])
-            if self._tin_simplices is not None and len(self._tin_simplices) > 0 and len(self.boundary_indices) >= 3:
+            if not is_two_surfs and self._tin_simplices is not None and len(self._tin_simplices) > 0 and len(self.boundary_indices) >= 3:
                 tin_surface_param = "bottom" if is_cut else "top"
                 res = calc.calculate_with_custom_tin(
                     pts_2d=self._tin_pts_2d if self._tin_pts_2d is not None else pts_3d[:, :2],
@@ -5350,19 +5368,67 @@ class VolumeApp(_AppBase):
         self._update_toolbar_volume_labels()
 
 
+    def _detect_two_surfaces_heuristic(self) -> bool:
+        """Эвристическое определение съемки с двумя параллельными/независимыми поверхностями (например, фундаменты, перекрытия)."""
+        if not self.points or len(self.points) < 6:
+            return False
+        try:
+            coords = np.array([[p.x, p.y, p.h] for p in self.points], dtype=float)
+            h_vals = coords[:, 2]
+            h_min, h_max = float(np.min(h_vals)), float(np.max(h_vals))
+            if h_max - h_min < 0.20:
+                return False
+            span = max(float(np.ptp(coords[:, 0])), float(np.ptp(coords[:, 1])))
+            if span < 1e-4:
+                return False
+
+            from scipy.spatial import cKDTree
+            r_tol = min(0.35, max(0.06, span * 0.05))
+            tree = cKDTree(coords[:, :2])
+            pairs = tree.query_pairs(r=r_tol)
+            vert_pairs = [(i, j) for i, j in pairs if abs(coords[i, 2] - coords[j, 2]) >= 0.20]
+
+            # 1. Значительная доля точек состоит из вертикальных пар (например, углы фундамента)
+            if len(vert_pairs) >= 3 and (len(vert_pairs) * 2 >= min(len(self.points) * 0.25, 20)):
+                return True
+
+            # 2. Истинный бимодальный разрыв по высоте (gap >= 0.25 м без промежуточных точек) и перекрытие в плане (IoU > 0.40)
+            split_candidate = (h_min + h_max) / 2.0
+            idx_top = [i for i, h in enumerate(h_vals) if h > split_candidate]
+            idx_bot = [i for i, h in enumerate(h_vals) if h <= split_candidate]
+            if len(idx_top) >= 3 and len(idx_bot) >= 3:
+                gap = float(np.min(coords[idx_top, 2]) - np.max(coords[idx_bot, 2]))
+                if gap >= 0.25:
+                    bbox_top = (np.min(coords[idx_top, 0]), np.max(coords[idx_top, 0]),
+                                np.min(coords[idx_top, 1]), np.max(coords[idx_top, 1]))
+                    bbox_bot = (np.min(coords[idx_bot, 0]), np.max(coords[idx_bot, 0]),
+                                np.min(coords[idx_bot, 1]), np.max(coords[idx_bot, 1]))
+                    dx_overlap = max(0.0, min(bbox_top[1], bbox_bot[1]) - max(bbox_top[0], bbox_bot[0]))
+                    dy_overlap = max(0.0, min(bbox_top[3], bbox_bot[3]) - max(bbox_top[2], bbox_bot[2]))
+                    area_overlap = dx_overlap * dy_overlap
+                    area_top = max(1e-4, (bbox_top[1] - bbox_top[0]) * (bbox_top[3] - bbox_top[2]))
+                    area_bot = max(1e-4, (bbox_bot[1] - bbox_bot[0]) * (bbox_bot[3] - bbox_bot[2]))
+                    area_union = area_top + area_bot - area_overlap
+                    iou = area_overlap / max(1e-4, area_union)
+                    area_ratio = min(area_top, area_bot) / max(area_top, area_bot)
+                    if iou > 0.45 and area_ratio >= 0.50:
+                        return True
+        except Exception:
+            return False
+        return False
+
     def _is_two_surfaces(self) -> bool:
         """Проверяет, является ли проект расчетом по двум независимым поверхностям (Верх и Низ)."""
         if getattr(self, "__dict__", {}).get("_is_separate_surfaces", False):
             return True
         if not self.points:
             return False
-        # Проект с контуром сшивания всегда рассчитывается методом сшивания по контуру
-        if len(self.boundary_indices) >= 3 or len(self.boundary_indices) > 0:
-            return False
-        has_top = any(p.surface_type == "top" for p in self.points)
-        has_bot = any(p.surface_type == "bottom" for p in self.points)
-        has_bound = any(p.surface_type == "boundary" for p in self.points)
-        return has_top and has_bot and not has_bound
+        n_top = sum(1 for p in self.points if p.surface_type == "top")
+        n_bot = sum(1 for p in self.points if p.surface_type == "bottom")
+        has_bound_pts = any(p.surface_type == "boundary" for p in self.points)
+        if n_top >= 3 and n_bot >= 3 and not has_bound_pts:
+            return True
+        return False
 
     def _invalidate_boundary_cache(self):
         """Сбрасывает кешированный интерполятор контура и классификацию поверхностей при любых изменениях геометрии"""
@@ -5446,13 +5512,18 @@ class VolumeApp(_AppBase):
 
         surfaces = []
         for i, p in enumerate(self.points):
-            if p.surface_type == "top":
+            if is_two:
+                if p.surface_type in ("top", "bottom"):
+                    surfaces.append(p.surface_type)
+                else:
+                    surfaces.append("top" if p.h > split_h else "bottom")
+            elif p.surface_type == "top":
                 surfaces.append("top")
             elif p.surface_type == "bottom":
                 surfaces.append("bottom")
             elif i in bound_set or p.surface_type == "boundary":
                 surfaces.append("boundary")
-            elif is_two or not has_contour:
+            elif not has_contour:
                 surfaces.append("top" if p.h > split_h else "bottom")
             else:
                 is_inside = bool(inside_mask[i]) if (inside_mask is not None and i < len(inside_mask)) else False
@@ -6210,7 +6281,8 @@ class VolumeApp(_AppBase):
         is_cut = self._is_excavation()
         grid_upper, grid_lower = z_top_g, z_bot_g
 
-        has_tin = (r.get("custom_tin") and r.get("pts_3d") is not None
+        is_two_surfs = self._is_two_surfaces()
+        has_tin = (not is_two_surfs and r.get("custom_tin") and r.get("pts_3d") is not None
                    and r.get("active_simplices") is not None
                    and len(r["active_simplices"]) > 0)
 
@@ -6262,7 +6334,7 @@ class VolumeApp(_AppBase):
                 self.ax_3d.plot_surface(r["grid_y"], r["grid_x"], grid_lower,
                                         cmap="Blues_r", alpha=0.85, edgecolor="none", rstride=r_step, cstride=c_step)
 
-        if len(self.boundary_indices) >= 3:
+        if not is_two_surfs and len(self.boundary_indices) >= 3:
             b_pts = r["boundary"]
             self.ax_3d.plot(list(b_pts[:, 1]) + [b_pts[0, 1]],
                             list(b_pts[:, 0]) + [b_pts[0, 0]],
@@ -7152,11 +7224,14 @@ class VolumeApp(_AppBase):
 
         mean_bound, split_h, work_type = self._get_split_height()
         is_cut = (work_type == "cut")
-        target_working_surf = "bottom" if is_cut else "top"
+        is_two_surfs = self._is_two_surfaces()
+        if is_two_surfs:
+            target_working_surf = "bottom" if (self._show_bottom.get() and not self._show_top.get()) else "top"
+        else:
+            target_working_surf = "bottom" if is_cut else "top"
 
         # Отбираем точки, лежащие на границе или относящиеся к рабочей поверхности контура
         included_indices = []
-        is_two_surfs = self._is_two_surfaces()
         surfaces = self._ensure_point_surfaces()
         inside_mask = self._ensure_boundary_inside_mask()
         for i, p in enumerate(self.points):
@@ -7208,7 +7283,7 @@ class VolumeApp(_AppBase):
                 c2 = pts_included[simplex[2]]
                 centroid = (c0 + c1 + c2) / 3.0
 
-                if not bound_path.contains_point(centroid, radius=1e-5):
+                if not is_two_surfs and not bound_path.contains_point(centroid, radius=1e-5):
                     continue
 
                 p0_idx = included_indices[simplex[0]]
@@ -7227,7 +7302,9 @@ class VolumeApp(_AppBase):
 
         # В выемке основной TIN (котлован) относится к нижней поверхности (show_bottom).
         # В насыпи основной TIN (насыпь) относится к верхней поверхности (show_top).
-        if show_top and show_bottom:
+        if is_two_surfs:
+            show_main_tin = show_bottom if target_working_surf == "bottom" else show_top
+        elif show_top and show_bottom:
             show_main_tin = True
         elif is_cut:
             show_main_tin = show_bottom
@@ -7235,9 +7312,15 @@ class VolumeApp(_AppBase):
             show_main_tin = show_top
 
         if show_main_tin:
-            base_face = "#2980b9" if is_cut else "#d35400"
-            base_edge = "#1f618d" if is_cut else "#a04000"
-            base_alpha = 0.15 if is_cut else 0.18
+            if is_two_surfs:
+                is_bot_active = (target_working_surf == "bottom")
+                base_face = "#2980b9" if is_bot_active else "#d35400"
+                base_edge = "#1f618d" if is_bot_active else "#a04000"
+                base_alpha = 0.15 if is_bot_active else 0.18
+            else:
+                base_face = "#2980b9" if is_cut else "#d35400"
+                base_edge = "#1f618d" if is_cut else "#a04000"
+                base_alpha = 0.15 if is_cut else 0.18
             for i, (p0_idx, p1_idx, p2_idx) in enumerate(kept_simplices):
                 v0 = (self.points[p0_idx].y, self.points[p0_idx].x)
                 v1 = (self.points[p1_idx].y, self.points[p1_idx].x)
@@ -7275,7 +7358,7 @@ class VolumeApp(_AppBase):
 
             for idx in included_indices:
                 p = self.points[idx]
-                is_boundary = idx in boundary_set
+                is_boundary = (idx in boundary_set) if not is_two_surfs else False
                 if is_boundary:
                     if show_top and show_bottom:
                         show_pt = True
@@ -7392,7 +7475,7 @@ class VolumeApp(_AppBase):
                 self._tin_updating_selection = False
 
         # 5. Масштабирование / сохранение вида
-        if not reset_view and getattr(self, "_tin_view_initialized", False) and old_xlim and old_ylim:
+        if not reset_view and getattr(self, "__dict__", {}).get("_tin_view_initialized", False) and old_xlim and old_ylim:
             self.ax_tin.set_xlim(old_xlim)
             self.ax_tin.set_ylim(old_ylim)
             self.canvas_tin.draw()
