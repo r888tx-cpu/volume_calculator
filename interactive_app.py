@@ -3783,7 +3783,57 @@ class VolumeApp(_AppBase):
         else:
             self._is_separate_surfaces = False
 
+        if getattr(self, "_is_separate_surfaces", False):
+            self._adjust_work_zone_boundary_for_two_surfaces(xy)
+
         self._invalidate_boundary_cache()
+
+    def _adjust_work_zone_boundary_for_two_surfaces(self, xy: np.ndarray):
+        """
+        Если в режиме двух поверхностей одна поверхность существенно меньше другой по площади в плане
+        (например, дно котлована/выемки на большой окружающей площадке, или локальная насыпь на обширном основании),
+        автоматически выставляет расчетную границу по контуру МЕНЬШЕЙ поверхности (зоне фактических работ),
+        чтобы избежать фиктивной экстраполяции высот за пределы рабочей зоны.
+        """
+        try:
+            idx_top = [i for i, p in enumerate(self.points) if p.surface_type == "top"]
+            idx_bot = [i for i, p in enumerate(self.points) if p.surface_type == "bottom"]
+            if len(idx_top) < 3 or len(idx_bot) < 3:
+                return
+
+            xy_top = xy[idx_top]
+            xy_bot = xy[idx_bot]
+
+            hull_top = ConvexHull(xy_top)
+            hull_bot = ConvexHull(xy_bot)
+
+            poly_top = xy_top[hull_top.vertices]
+            poly_bot = xy_bot[hull_bot.vertices]
+
+            from volume_engine import polygon_area_2d
+            area_top = polygon_area_2d(poly_top)
+            area_bot = polygon_area_2d(poly_bot)
+
+            if area_top <= 1e-4 or area_bot <= 1e-4:
+                return
+
+            # 1. Дно котлована/выемки (bot) существенно меньше дневной поверхности (top)
+            if area_bot < area_top * 0.85:
+                path_top = MplPath(poly_top)
+                if (np.mean(path_top.contains_points(xy_bot, radius=0.1)) >= 0.75 and
+                        np.any(path_top.contains_points(xy_bot, radius=-0.35))):
+                    self.boundary_indices = [int(idx_bot[v]) for v in hull_bot.vertices]
+                    return
+
+            # 2. Насыпь (top) существенно меньше окружающего основания (bot)
+            if area_top < area_bot * 0.85:
+                path_bot = MplPath(poly_bot)
+                if (np.mean(path_bot.contains_points(xy_top, radius=0.1)) >= 0.75 and
+                        np.any(path_bot.contains_points(xy_top, radius=-0.35))):
+                    self.boundary_indices = [int(idx_top[v]) for v in hull_top.vertices]
+                    return
+        except Exception:
+            pass
 
     def _on_mode_change(self):
         mode = self.current_mode.get()

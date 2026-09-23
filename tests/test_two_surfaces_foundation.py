@@ -258,3 +258,78 @@ def test_separate_surfaces_import_and_volume_calculation():
     assert pytest.approx(res["area_2d"], rel=0.01) == 400.0
     assert pytest.approx(res["avg_thickness"], rel=0.01) == 1.25
 
+
+def test_separate_surfaces_unequal_pit_in_site():
+    # Дневная поверхность (top): площадка 100х100 м, z = 100.0 (площадь 10000 м2)
+    pts_top = [
+        GeoPoint(id="t1", x=0.0, y=0.0, h=100.0, surface_type="top"),
+        GeoPoint(id="t2", x=100.0, y=0.0, h=100.0, surface_type="top"),
+        GeoPoint(id="t3", x=100.0, y=100.0, h=100.0, surface_type="top"),
+        GeoPoint(id="t4", x=0.0, y=100.0, h=100.0, surface_type="top"),
+    ]
+    # Дно котлована (bot): выемка 40х40 м, z = 97.0 (площадь 1600 м2, глубина 3.0 м)
+    pts_bot = [
+        GeoPoint(id="b1", x=30.0, y=30.0, h=97.0, surface_type="bottom"),
+        GeoPoint(id="b2", x=70.0, y=30.0, h=97.0, surface_type="bottom"),
+        GeoPoint(id="b3", x=70.0, y=70.0, h=97.0, surface_type="bottom"),
+        GeoPoint(id="b4", x=30.0, y=70.0, h=97.0, surface_type="bottom"),
+    ]
+    app = create_foundation_mock_app()
+    app._is_separate_surfaces = True
+    app.points = pts_top + pts_bot
+    app.boundary_indices = []
+    app._auto_classify_initial()
+
+    # Граница должна автоматически установиться по контуру выемки (дно котлована)
+    boundary_pts = [app.points[i] for i in app.boundary_indices]
+    for bp in boundary_pts:
+        assert bp.surface_type == "bottom"
+    assert len(boundary_pts) == 4
+
+    app.calculate_volume(silent=True)
+    res = app.calc_results
+    assert res is not None
+    # Площадь контура = 1600 м2, объем = 1600 * 3.0 = 4800 м3 (выемка)
+    assert pytest.approx(res["area_2d"], rel=0.02) == 1600.0
+    assert pytest.approx(res["v_net"], rel=0.02) == 4800.0
+    assert pytest.approx(res["v_fill"], rel=0.02) == 4800.0
+    assert pytest.approx(res["v_cut"], abs=0.02) == 0.0
+
+
+def test_separate_surfaces_unequal_embankment_on_site():
+    # Дневная поверхность основания (bot): площадка 100х100 м, z = 50.0 (площадь 10000 м2)
+    pts_bot = [
+        GeoPoint(id="b1", x=0.0, y=0.0, h=50.0, surface_type="bottom"),
+        GeoPoint(id="b2", x=100.0, y=0.0, h=50.0, surface_type="bottom"),
+        GeoPoint(id="b3", x=100.0, y=100.0, h=50.0, surface_type="bottom"),
+        GeoPoint(id="b4", x=0.0, y=100.0, h=50.0, surface_type="bottom"),
+    ]
+    # Насыпь (top): верхушка насыпи 40х40 м, z = 54.0 (площадь 1600 м2, высота 4.0 м)
+    pts_top = [
+        GeoPoint(id="t1", x=30.0, y=30.0, h=54.0, surface_type="top"),
+        GeoPoint(id="t2", x=70.0, y=30.0, h=54.0, surface_type="top"),
+        GeoPoint(id="t3", x=70.0, y=70.0, h=54.0, surface_type="top"),
+        GeoPoint(id="t4", x=30.0, y=70.0, h=54.0, surface_type="top"),
+    ]
+    app = create_foundation_mock_app()
+    app._is_separate_surfaces = True
+    app.points = pts_top + pts_bot
+    app.boundary_indices = []
+    app._auto_classify_initial()
+
+    # Граница должна автоматически установиться по контуру насыпи (top)
+    boundary_pts = [app.points[i] for i in app.boundary_indices]
+    for bp in boundary_pts:
+        assert bp.surface_type == "top"
+    assert len(boundary_pts) == 4
+
+    app.calculate_volume(silent=True)
+    res = app.calc_results
+    assert res is not None
+    # Площадь контура = 1600 м2, объем = 1600 * 4.0 = 6400 м3 (насыпь)
+    assert pytest.approx(res["area_2d"], rel=0.02) == 1600.0
+    assert pytest.approx(res["v_net"], rel=0.02) == 6400.0
+    assert pytest.approx(res["v_fill"], rel=0.02) == 6400.0
+    assert pytest.approx(res["v_cut"], abs=0.02) == 0.0
+
+
