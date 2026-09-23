@@ -209,3 +209,52 @@ def test_foundation_tin_top_surface():
         for v in tri:
             assert app.points[v].surface_type == "top"
             assert app.points[v].h > 198.0
+
+
+def test_separate_surfaces_import_and_volume_calculation():
+    f_top = os.path.join(os.path.dirname(os.path.dirname(__file__)), "Projects", "test_top_surface.txt")
+    f_bot = os.path.join(os.path.dirname(os.path.dirname(__file__)), "Projects", "test_bot_surface.txt")
+    if os.path.exists(f_top) and os.path.exists(f_bot):
+        pts_top = load_points_from_file(f_top)
+        pts_bot = load_points_from_file(f_bot)
+    else:
+        pts_top, pts_bot = [], []
+        idx = 1
+        for x in np.linspace(439100.0, 439120.0, 5):
+            for y in np.linspace(2281300.0, 2281320.0, 5):
+                dx = x - 439100.0
+                dy = y - 2281300.0
+                z_top = 150.0 + 0.05 * dx + 0.08 * dy
+                pts_top.append(GeoPoint(id=str(idx), x=x, y=y, h=z_top, surface_type="top"))
+                pts_bot.append(GeoPoint(id=str(idx), x=x, y=y, h=z_top - 1.25, surface_type="bottom"))
+                idx += 1
+
+    app = create_foundation_mock_app()
+    app._is_separate_surfaces = True
+    for p in pts_top:
+        p.surface_type = "top"
+    for p in pts_bot:
+        p.surface_type = "bottom"
+
+    app.points = pts_top + pts_bot
+    app.boundary_indices = []
+    app._auto_classify_initial()
+
+    assert app._is_separate_surfaces is True
+    assert app._is_two_surfaces() is True
+    assert len(app.boundary_indices) >= 3
+
+    top_pts = [p for p in app.points if p.surface_type == "top"]
+    bot_pts = [p for p in app.points if p.surface_type == "bottom"]
+    assert len(top_pts) == 25
+    assert len(bot_pts) == 25
+
+    app.calculate_volume(silent=True)
+    res = app.calc_results
+    assert res is not None
+    assert pytest.approx(res["v_net"], rel=0.01) == 500.0
+    assert pytest.approx(res["v_fill"], rel=0.01) == 500.0
+    assert pytest.approx(res["v_cut"], abs=0.01) == 0.0
+    assert pytest.approx(res["area_2d"], rel=0.01) == 400.0
+    assert pytest.approx(res["avg_thickness"], rel=0.01) == 1.25
+

@@ -3327,6 +3327,8 @@ class VolumeApp(_AppBase):
         self.save_project_state(self._current_file_path)
         self._scan_saved_projects()
         self.cbo_projects.set(proj_name)
+        if len(self.boundary_indices) >= 3:
+            self._schedule_boundary_calc(300)
 
 
     # ==================== СОХРАНЕНИЕ / ЗАГРУЗКА ПРОЕКТА ====================
@@ -3768,7 +3770,11 @@ class VolumeApp(_AppBase):
         else:
             self.boundary_indices = list(range(len(self.points)))
 
-        if self._detect_two_surfaces_heuristic():
+        if getattr(self, "_is_separate_surfaces", False):
+            # Внимание: если режим двух поверхностей уже выставлен (например, при раздельном импорте двух файлов),
+            # сохраняем исходное разделение точек на top и bottom!
+            pass
+        elif self._detect_two_surfaces_heuristic():
             self._is_separate_surfaces = True
             h_vals = [p.h for p in self.points]
             split_candidate = (min(h_vals) + max(h_vals)) / 2.0
@@ -5180,7 +5186,7 @@ class VolumeApp(_AppBase):
         top_arr = np.array(top_list) if top_list else np.empty((0, 3))
         bot_arr = np.array(bot_list) if bot_list else np.empty((0, 3))
 
-        work_type_param = "cut" if is_cut else "fill"
+        work_type_param = "grading" if is_two_surfs else ("cut" if is_cut else "fill")
 
         try:
             from volume_engine import VolumeCalculator
