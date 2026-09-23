@@ -1444,3 +1444,232 @@ class CartogramDxfExportDialog(tk.Toplevel):
         except Exception as e:
             messagebox.showerror("Исключение", f"Произошла ошибка при экспорте:\n{e}", parent=self)
 
+
+class DxfImportDialog(tk.Toplevel):
+    """Диалог настройки и импорта геодезических данных и контуров из файлов DXF (Tkinter/CustomTkinter)."""
+    def __init__(self, parent, filepath: str = ""):
+        super().__init__(parent)
+        self.filepath = filepath
+        self.title("📥 Импорт геометрии из DXF (AutoCAD)")
+        self.resizable(False, False)
+        bg = "#1a1e24" if ctk.get_appearance_mode().lower() == "dark" else "#f5f6f8"
+        self.configure(bg=bg)
+        set_window_dark_titlebar(self)
+        self.transient(parent)
+        self.grab_set()
+
+        self.result_points: List[GeoPoint] = []
+        self.result_boundary: Optional[np.ndarray] = None
+        self.is_two_surfaces: bool = False
+
+        from dxf_importer import inspect_dxf_layers
+        ok, res = inspect_dxf_layers(filepath)
+        if not ok:
+            messagebox.showerror("Ошибка чтения DXF", str(res), parent=self)
+            self.destroy()
+            return
+
+        self.dxf_data = res
+        self.geometry("640x620")
+        self._init_ui()
+
+    def _init_ui(self):
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.pack(fill=tk.BOTH, expand=True, padx=16, pady=14)
+
+        file_label = os.path.basename(self.filepath)
+        ctk.CTkLabel(
+            container,
+            text="Параметры импорта данных из DXF",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            anchor="w"
+        ).pack(fill=tk.X, pady=(0, 2))
+
+        ctk.CTkLabel(
+            container,
+            text=f"Файл: {file_label}",
+            font=ctk.CTkFont(size=11),
+            text_color=("gray40", "gray60"),
+            anchor="w"
+        ).pack(fill=tk.X, pady=(0, 8))
+
+        # Таблица обнаруженных слоёв (ttk.Treeview)
+        lbl_tbl = ctk.CTkLabel(
+            container,
+            text="Обнаруженные слои и геодезические объекты:",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            anchor="w"
+        )
+        lbl_tbl.pack(fill=tk.X, pady=(0, 4))
+
+        tree_frame = ctk.CTkFrame(container)
+        tree_frame.pack(fill=tk.X, pady=(0, 10))
+
+        tree_scroll = ttk.Scrollbar(tree_frame)
+        tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        cols = ("layer", "points", "inserts", "polylines", "texts", "total")
+        self.tree = ttk.Treeview(tree_frame, columns=cols, show="headings", height=5, yscrollcommand=tree_scroll.set)
+        tree_scroll.config(command=self.tree.yview)
+
+        self.tree.heading("layer", text="Слой")
+        self.tree.heading("points", text="Точки (POINT)")
+        self.tree.heading("inserts", text="Блоки (INSERT)")
+        self.tree.heading("polylines", text="Полилинии")
+        self.tree.heading("texts", text="Тексты")
+        self.tree.heading("total", text="Всего")
+
+        self.tree.column("layer", width=160, anchor="w")
+        self.tree.column("points", width=95, anchor="center")
+        self.tree.column("inserts", width=95, anchor="center")
+        self.tree.column("polylines", width=80, anchor="center")
+        self.tree.column("texts", width=70, anchor="center")
+        self.tree.column("total", width=70, anchor="center")
+
+        layers = self.dxf_data.get("layers", {})
+        layer_names = sorted(list(layers.keys()))
+        for lname in layer_names:
+            linfo = layers[lname]
+            self.tree.insert("", tk.END, values=(
+                lname,
+                str(linfo["points_count"]),
+                str(linfo["inserts_count"]),
+                str(linfo["polylines_count"]),
+                str(linfo["texts_count"]),
+                str(linfo["total_objects"]),
+            ))
+        self.tree.pack(fill=tk.BOTH, expand=True)
+
+        # Секция выбора слоев
+        f_surf = ctk.CTkFrame(container)
+        f_surf.pack(fill=tk.X, pady=(0, 10), padx=2)
+        f_surf.columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(f_surf, text="Поверхность ВЕРХ:", anchor="w").grid(row=0, column=0, sticky="w", padx=10, pady=5)
+        top_options = ["Все слои (единая съёмка)"] + layer_names
+        self.cbo_top = ctk.CTkComboBox(f_surf, values=top_options, width=320)
+        sug_top = self.dxf_data.get("suggested_top_layer")
+        if sug_top and sug_top in layer_names:
+            self.cbo_top.set(sug_top)
+        else:
+            self.cbo_top.set(top_options[0])
+        self.cbo_top.grid(row=0, column=1, sticky="ew", padx=10, pady=5)
+
+        ctk.CTkLabel(f_surf, text="Поверхность НИЗ (земля):", anchor="w").grid(row=1, column=0, sticky="w", padx=10, pady=5)
+        bot_options = ["-- Не выбрано (одна поверхность) --"] + layer_names
+        self.cbo_bot = ctk.CTkComboBox(f_surf, values=bot_options, width=320)
+        sug_bot = self.dxf_data.get("suggested_bottom_layer")
+        if sug_bot and sug_bot in layer_names and sug_bot != sug_top:
+            self.cbo_bot.set(sug_bot)
+        else:
+            self.cbo_bot.set(bot_options[0])
+        self.cbo_bot.grid(row=1, column=1, sticky="ew", padx=10, pady=5)
+
+        ctk.CTkLabel(f_surf, text="Контур границы работ:", anchor="w").grid(row=2, column=0, sticky="w", padx=10, pady=5)
+        poly_layers = [l for l in layer_names if layers[l]["polylines_count"] > 0]
+        bound_options = ["-- Авто (выпуклая оболочка точек) --"] + poly_layers
+        self.cbo_boundary = ctk.CTkComboBox(f_surf, values=bound_options, width=320)
+        sug_b = self.dxf_data.get("suggested_boundary_layer")
+        if sug_b and sug_b in poly_layers:
+            self.cbo_boundary.set(sug_b)
+        else:
+            self.cbo_boundary.set(bound_options[0])
+        self.cbo_boundary.grid(row=2, column=1, sticky="ew", padx=10, pady=5)
+
+        # Опции примитивов
+        f_opts = ctk.CTkFrame(container)
+        f_opts.pack(fill=tk.X, pady=(0, 10), padx=2)
+        f_opts.columnconfigure(0, weight=1)
+        f_opts.columnconfigure(1, weight=1)
+
+        self.chk_points = ctk.CTkCheckBox(f_opts, text="Точки POINT")
+        self.chk_points.select()
+        self.chk_points.grid(row=0, column=0, sticky="w", padx=10, pady=4)
+
+        self.chk_inserts = ctk.CTkCheckBox(f_opts, text="Блоки / COGO INSERT")
+        self.chk_inserts.select()
+        self.chk_inserts.grid(row=0, column=1, sticky="w", padx=10, pady=4)
+
+        self.chk_polylines = ctk.CTkCheckBox(f_opts, text="Вершины полилиний")
+        self.chk_polylines.deselect()
+        self.chk_polylines.grid(row=1, column=0, sticky="w", padx=10, pady=4)
+
+        self.chk_texts = ctk.CTkCheckBox(f_opts, text="Числовые тексты TEXT")
+        self.chk_texts.deselect()
+        self.chk_texts.grid(row=1, column=1, sticky="w", padx=10, pady=4)
+
+        self.chk_coord_swap = ctk.CTkCheckBox(
+            container,
+            text="Ориентация ГОСТ: X_cad = Восток (Y_geo), Y_cad = Север (X_geo)"
+        )
+        self.chk_coord_swap.select()
+        self.chk_coord_swap.pack(anchor="w", padx=4, pady=(0, 10))
+
+        # Нижняя панель кнопок
+        btn_frame = ctk.CTkFrame(container, fg_color="transparent")
+        btn_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=(8, 0))
+
+        btn_cancel = ctk.CTkButton(
+            btn_frame,
+            text="Отмена",
+            width=100,
+            fg_color="gray40",
+            hover_color="gray30",
+            command=self.destroy
+        )
+        btn_cancel.pack(side=tk.RIGHT, padx=(6, 0))
+
+        btn_import = ctk.CTkButton(
+            btn_frame,
+            text="📥 Импортировать геометрию",
+            width=190,
+            command=self._do_import
+        )
+        btn_import.pack(side=tk.RIGHT)
+
+        self.bind("<Escape>", lambda e: self.destroy())
+
+    def _do_import(self):
+        top_txt = self.cbo_top.get()
+        bot_txt = self.cbo_bot.get()
+        b_txt = self.cbo_boundary.get()
+
+        top_layers = None
+        if top_txt and not top_txt.startswith("Все слои"):
+            top_layers = [top_txt]
+
+        bottom_layers = None
+        if bot_txt and not bot_txt.startswith("--"):
+            bottom_layers = [bot_txt]
+
+        boundary_layer = None
+        if b_txt and not b_txt.startswith("--"):
+            boundary_layer = b_txt
+
+        coord_swap = bool(self.chk_coord_swap.get())
+
+        try:
+            from dxf_importer import extract_dxf_geometry
+            ok, pts, b_arr, is_two_s, msg = extract_dxf_geometry(
+                filepath=self.filepath,
+                top_layers=top_layers,
+                bottom_layers=bottom_layers,
+                boundary_layer=boundary_layer,
+                coord_swap=coord_swap,
+                include_points=bool(self.chk_points.get()),
+                include_inserts=bool(self.chk_inserts.get()),
+                include_polylines_as_points=bool(self.chk_polylines.get()),
+                include_texts=bool(self.chk_texts.get()),
+            )
+            if not ok or not pts:
+                messagebox.showwarning("Внимание", msg, parent=self)
+                return
+
+            self.result_points = pts
+            self.result_boundary = b_arr
+            self.is_two_surfaces = is_two_s
+            self.destroy()
+        except Exception as e:
+            messagebox.showerror("Ошибка импорта", f"Не удалось извлечь геометрию:\n{e}", parent=self)
+
+

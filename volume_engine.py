@@ -97,25 +97,28 @@ class VolumeCalculator:
             all_pts.append(self.raw_top)
         if len(self.raw_bottom) > 0:
             all_pts.append(self.raw_bottom)
-        if boundary_points is not None and len(boundary_points) > 0:
-            all_pts.append(np.asarray(boundary_points, dtype=np.float64))
 
         if not all_pts:
             raise ValueError("Нет точек для расчета объема")
 
         all_pts_arr = np.vstack(all_pts)
 
+        # Определение внешнего контура
+        if boundary_points is not None and len(boundary_points) >= 3:
+            b_arr = np.asarray(boundary_points, dtype=np.float64)
+            if b_arr.ndim == 2 and b_arr.shape[1] == 2:
+                mean_z = float(np.mean(all_pts_arr[:, 2]))
+                b_arr = np.hstack([b_arr, np.full((len(b_arr), 1), mean_z)])
+            self.boundary = b_arr
+            all_pts_arr = np.vstack([all_pts_arr, self.boundary])
+        else:
+            # Автоматическая выпуклая оболочка
+            hull = ConvexHull(all_pts_arr[:, :2] - [float(np.min(all_pts_arr[:, 0])), float(np.min(all_pts_arr[:, 1]))])
+            self.boundary = all_pts_arr[hull.vertices]
+
         # Локальный сдвиг координат для защиты от потери точности float
         self.x0 = float(np.min(all_pts_arr[:, 0]))
         self.y0 = float(np.min(all_pts_arr[:, 1]))
-
-        # Определение внешнего контура
-        if boundary_points is not None and len(boundary_points) >= 3:
-            self.boundary = np.asarray(boundary_points, dtype=np.float64)
-        else:
-            # Автоматическая выпуклая оболочка
-            hull = ConvexHull(all_pts_arr[:, :2] - [self.x0, self.y0])
-            self.boundary = all_pts_arr[hull.vertices]
 
         mean_bound = float(np.mean(self.boundary[:, 2]))
 

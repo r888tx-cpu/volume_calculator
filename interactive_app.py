@@ -599,7 +599,12 @@ class VolumeApp(_AppBase):
         b_imp = ctk.CTkButton(btn_box1, text="Импорт файла...", width=0, height=24,
                               command=self._open_file_dialog)
         b_imp.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
-        add_tooltip(b_imp, "Импортировать новый файл координат (TXT, CSV, DAT, XYZ, PTS) в проект")
+        add_tooltip(b_imp, "Импортировать новый файл координат (TXT, CSV, DAT, XYZ, PTS, DXF) в проект")
+
+        b_dxf = ctk.CTkButton(btn_box1, text="📥 DXF...", width=0, height=24,
+                              command=self._open_dxf_import_dialog)
+        b_dxf.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
+        add_tooltip(b_dxf, "Импортировать чертеж AutoCAD DXF с выбором слоев съёмки и контура границы")
 
         b_sep = ctk.CTkButton(btn_box1, text="Верх / Низ...", width=0, height=24,
                               command=self._open_separate_files_dialog)
@@ -3224,11 +3229,16 @@ class VolumeApp(_AppBase):
         self.load_file(dest_file)
 
     def _open_file_dialog(self):
-        """Импорт внешнего файла координат и создание новой папки проекта в Projects с датой создания"""
+        """Импорт внешнего файла координат или чертежа DXF и создание новой папки проекта в Projects"""
         f = filedialog.askopenfilename(
             initialdir=get_projects_dir(),
-            title="Выберите файл с координатами для импорта",
-            filetypes=[("Текстовые файлы", "*.txt *.csv *.dat *.xyz *.pts"), ("Все файлы", "*.*")]
+            title="Выберите файл с координатами или чертеж DXF для импорта",
+            filetypes=[
+                ("Все поддерживаемые форматы", "*.txt *.csv *.dat *.xyz *.pts *.dxf"),
+                ("Чертежи AutoCAD DXF", "*.dxf"),
+                ("Текстовые файлы координат", "*.txt *.csv *.dat *.xyz *.pts"),
+                ("Все файлы", "*.*")
+            ]
         )
         if not f:
             return
@@ -3250,49 +3260,90 @@ class VolumeApp(_AppBase):
         self._update_files_combobox_for_project(target_dir)
         self.load_file(dest_file)
 
+    def _open_dxf_import_dialog(self):
+        """Диалог выбора и импорта чертежа AutoCAD DXF с автоматическим определением слоев"""
+        f = filedialog.askopenfilename(
+            initialdir=get_projects_dir(),
+            title="Выберите чертеж AutoCAD DXF для импорта",
+            filetypes=[("Чертежи AutoCAD DXF", "*.dxf"), ("Все файлы", "*.*")]
+        )
+        if not f:
+            return
+
+        base_name = os.path.splitext(os.path.basename(f))[0]
+        proj_name, target_dir = self._create_project_folder(base_name)
+
+        dest_file = os.path.join(target_dir, os.path.basename(f))
+        if os.path.abspath(f) != os.path.abspath(dest_file):
+            try:
+                shutil.copy2(f, dest_file)
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Не удалось скопировать DXF в проект:\n{e}")
+                return
+
+        self._scan_saved_projects()
+        self.cbo_projects.set(proj_name)
+        self._current_project_dir = target_dir
+        self._update_files_combobox_for_project(target_dir)
+        self.load_file(dest_file)
+
     def _open_separate_files_dialog(self):
         f_top = filedialog.askopenfilename(
             initialdir=get_projects_dir(),
             title="1/2 Выберите файл ВЕРХНЕЙ поверхности",
-            filetypes=[("Текстовые файлы", "*.txt *.csv *.dat"), ("Все файлы", "*.*")]
+            filetypes=[("Файлы съёмки (TXT, CSV, DXF)", "*.txt *.csv *.dat *.xyz *.pts *.dxf"), ("Все файлы", "*.*")]
         )
         if not f_top:
             return
         f_bot = filedialog.askopenfilename(
             initialdir=get_projects_dir(),
             title="2/2 Выберите файл НИЖНЕЙ поверхности",
-            filetypes=[("Текстовые файлы", "*.txt *.csv *.dat"), ("Все файлы", "*.*")]
+            filetypes=[("Файлы съёмки (TXT, CSV, DXF)", "*.txt *.csv *.dat *.xyz *.pts *.dxf"), ("Все файлы", "*.*")]
         )
         if not f_bot:
             return
 
-        pts_top = load_points_from_file(f_top)
-        if not pts_top and self._file_has_data_lines(f_top):
-            try:
-                self.attributes("-alpha", 1.0)
-            except Exception:
-                pass
-            dlg_top = CoordinateRemapDialog(self, f_top, initial_mapping=None)
-            try:
-                self.attributes("-alpha", 1.0)
-            except Exception:
-                pass
-            if dlg_top.result_mapping is not None:
-                pts_top = load_points_from_file(f_top, column_mapping=dlg_top.result_mapping)
+        if f_top.lower().endswith(".dxf"):
+            from dxf_importer import extract_dxf_geometry
+            ok, pts_top, _, _, _ = extract_dxf_geometry(f_top)
+            if not ok or not pts_top:
+                messagebox.showerror("Ошибка импорта DXF", f"Не удалось прочитать точки из DXF верха: {f_top}")
+                return
+        else:
+            pts_top = load_points_from_file(f_top)
+            if not pts_top and self._file_has_data_lines(f_top):
+                try:
+                    self.attributes("-alpha", 1.0)
+                except Exception:
+                    pass
+                dlg_top = CoordinateRemapDialog(self, f_top, initial_mapping=None)
+                try:
+                    self.attributes("-alpha", 1.0)
+                except Exception:
+                    pass
+                if dlg_top.result_mapping is not None:
+                    pts_top = load_points_from_file(f_top, column_mapping=dlg_top.result_mapping)
 
-        pts_bot = load_points_from_file(f_bot)
-        if not pts_bot and self._file_has_data_lines(f_bot):
-            try:
-                self.attributes("-alpha", 1.0)
-            except Exception:
-                pass
-            dlg_bot = CoordinateRemapDialog(self, f_bot, initial_mapping=None)
-            try:
-                self.attributes("-alpha", 1.0)
-            except Exception:
-                pass
-            if dlg_bot.result_mapping is not None:
-                pts_bot = load_points_from_file(f_bot, column_mapping=dlg_bot.result_mapping)
+        if f_bot.lower().endswith(".dxf"):
+            from dxf_importer import extract_dxf_geometry
+            ok, pts_bot, _, _, _ = extract_dxf_geometry(f_bot)
+            if not ok or not pts_bot:
+                messagebox.showerror("Ошибка импорта DXF", f"Не удалось прочитать точки из DXF низа: {f_bot}")
+                return
+        else:
+            pts_bot = load_points_from_file(f_bot)
+            if not pts_bot and self._file_has_data_lines(f_bot):
+                try:
+                    self.attributes("-alpha", 1.0)
+                except Exception:
+                    pass
+                dlg_bot = CoordinateRemapDialog(self, f_bot, initial_mapping=None)
+                try:
+                    self.attributes("-alpha", 1.0)
+                except Exception:
+                    pass
+                if dlg_bot.result_mapping is not None:
+                    pts_bot = load_points_from_file(f_bot, column_mapping=dlg_bot.result_mapping)
 
         if not pts_top or not pts_bot:
             messagebox.showerror(
@@ -3300,7 +3351,7 @@ class VolumeApp(_AppBase):
                 f"Не удалось распознать точки в одном из файлов:\n"
                 f"• Верхняя поверхность: {len(pts_top) if pts_top else 0} точек\n"
                 f"• Нижняя поверхность: {len(pts_bot) if pts_bot else 0} точек\n\n"
-                f"Убедитесь, что оба файла содержат корректные строки координат."
+                f"Убедитесь, что оба файла содержат корректные строки координат или чертеж DXF."
             )
             return
 
@@ -3685,6 +3736,11 @@ class VolumeApp(_AppBase):
     def load_file(self, filepath: str, column_mapping: dict = None):
         self._current_file_path = filepath
         self._current_project_dir = os.path.dirname(filepath)
+
+        if filepath.lower().endswith(".dxf"):
+            self._import_dxf_file(filepath)
+            return
+
         if column_mapping is not None:
             self._column_mapping = column_mapping
 
@@ -3738,6 +3794,59 @@ class VolumeApp(_AppBase):
         self.save_project_state(filepath)
 
         # Автоматический расчёт объёма и переход на схему в плане после загрузки
+        if len(self.boundary_indices) >= 3:
+            self.after(200, self._auto_calc_and_show_plan)
+
+    def _import_dxf_file(self, filepath: str):
+        """Импортирует съёмку и контур из файла чертежа AutoCAD DXF"""
+        self._current_file_path = filepath
+        self._current_project_dir = os.path.dirname(filepath)
+
+        from ui_dialogs import DxfImportDialog
+        dlg = DxfImportDialog(self, filepath)
+        self.wait_window(dlg)
+
+        if not getattr(dlg, "result_points", None):
+            return
+
+        self._reset_all_caches_for_new_project()
+        pts = list(dlg.result_points)
+        self.boundary_indices = []
+
+        if dlg.result_boundary is not None and len(dlg.result_boundary) >= 3:
+            b_indices = []
+            mean_h = float(np.mean([p.h for p in pts])) if pts else 0.0
+            for k, (bx, by) in enumerate(dlg.result_boundary):
+                found_idx = -1
+                for i, p in enumerate(pts):
+                    if math.hypot(p.x - bx, p.y - by) < 0.05:
+                        found_idx = i
+                        break
+                if found_idx != -1:
+                    b_indices.append(found_idx)
+                else:
+                    new_pt = GeoPoint(id=f"BND{k+1}", x=float(bx), y=float(by), h=mean_h, surface_type="boundary")
+                    pts.append(new_pt)
+                    b_indices.append(len(pts) - 1)
+            self.boundary_indices = b_indices
+
+        self.points = pts
+        self._is_separate_surfaces = dlg.is_two_surfaces
+
+        proj_display = os.path.basename(self._current_project_dir) if self._current_project_dir else os.path.basename(filepath)
+        n_top = sum(1 for p in pts if p.surface_type == "top")
+        n_bot = sum(1 for p in pts if p.surface_type == "bottom")
+        if self._is_separate_surfaces and n_top > 0 and n_bot > 0:
+            self.lbl_file_info.configure(text=f"{proj_display} (DXF Верх: {n_top}, Низ: {n_bot})")
+        else:
+            self.lbl_file_info.configure(text=f"{proj_display} ({len(pts)} точек DXF)")
+
+        if not self.boundary_indices:
+            self._auto_classify_initial()
+
+        self._update_all_views(reset_view=True)
+        self.save_project_state(filepath)
+
         if len(self.boundary_indices) >= 3:
             self.after(200, self._auto_calc_and_show_plan)
 
