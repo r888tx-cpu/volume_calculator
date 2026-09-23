@@ -106,3 +106,14 @@ shutil.copy('app_icon.ico', os.path.join(_dist_root, 'app_icon.ico'))
 _dist_projects = os.path.join(_dist_root, 'Projects')
 if os.path.exists('Projects'):
     shutil.copytree('Projects', _dist_projects, dirs_exist_ok=True)
+
+# Автоматически создаем релизный zip-архив с номером версии (например, GeoVolumePro_v1.0.1_win64.zip)
+try:
+    import sys
+    if SPECPATH not in sys.path:
+        sys.path.insert(0, SPECPATH)
+    from dist_packager import create_dist_archive
+    create_dist_archive(base_dir=SPECPATH, dist_dir=DISTPATH)
+except Exception as _e:
+    print(f"Предупреждение при создании zip-архива: {_e}")
+
