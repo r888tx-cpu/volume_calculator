@@ -30,6 +30,7 @@ datas = [
     ('ui_dialogs.py', '.'),
     ('spatial_index.py', '.'),
     ('project_storage.py', '.'),
+    ('dxf_exporter.py', '.'),
     ('app_icon.ico', '.'),
     ('readme.html', '.'),
     ('report_icon.png', '.'),
@@ -38,13 +39,14 @@ datas = [
 ]
 datas += collect_data_files('customtkinter')
 datas += collect_data_files('tkinterdnd2')
+datas += collect_data_files('ezdxf')
 
 a = Analysis(
     ['volume_calc.py'],
     pathex=[],
     binaries=[],
     datas=datas,
-    hiddenimports=['tkinterdnd2', 'customtkinter', 'spatial_index', 'project_storage', 'ui_dialogs'],
+    hiddenimports=['tkinterdnd2', 'customtkinter', 'spatial_index', 'project_storage', 'ui_dialogs', 'dxf_exporter', 'ezdxf'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=['pyinstaller_runtime_hook.py'],

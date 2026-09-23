@@ -718,6 +718,15 @@ class VolumeApp(_AppBase):
                                                anchor="w", wraplength=340, height=16)
         self.lbl_report_status.pack(anchor=tk.W, padx=6, pady=(0, 2))
 
+        self.btn_export_dxf = ctk.CTkButton(
+            self.grp_results,
+            text="📐 Экспорт чертежа в DXF",
+            height=26,
+            font=ctk.CTkFont(size=11),
+            command=self._open_dxf_export_dialog
+        )
+        self.btn_export_dxf.pack(fill=tk.X, padx=6, pady=(0, 4))
+
 
     # ==================== СТИЛИЗАЦИЯ TTK / TEXT ПОД ТЕМУ CTK ====================
 
@@ -6880,6 +6889,20 @@ class VolumeApp(_AppBase):
 
         add_tooltip(btn_report, "Сохранить подробный текстовый отчет расчета объема (TXT) в папку проекта")
 
+        btn_dxf = tk.Button(
+            master=toolbar,
+            relief="flat",
+            overrelief="groove",
+            borderwidth=1,
+            bg=tb_bg,
+            activebackground=tb_bg,
+            command=self._open_dxf_export_dialog,
+        )
+        btn_dxf.config(text="DXF", font=("Segoe UI", 8, "bold"), fg=tb_fg)
+        toolbar._btn_dxf = btn_dxf
+        btn_dxf.pack(side=tk.LEFT, after=btn_report, padx=(2, 0), pady=1)
+        add_tooltip(btn_dxf, "Экспортировать чертеж картограммы земляных масс в формат AutoCAD DXF (ГОСТ 21.508-2020)")
+
         # 3. Центральная строка с объемами насыпи и выемки при открытых во весь экран вкладках
         lbl_vol = tk.Label(
             master=toolbar,
@@ -6902,6 +6925,16 @@ class VolumeApp(_AppBase):
                 pass
 
         return btn_report
+
+    def _open_dxf_export_dialog(self):
+        if not self.calc_results or "error" in self.calc_results:
+            messagebox.showwarning("Внимание", "Сначала выполните расчёт объема земляных масс.", parent=self)
+            return
+        try:
+            from ui_dialogs import CartogramDxfExportDialog
+            CartogramDxfExportDialog(self)
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось открыть диалог экспорта DXF:\n{e}", parent=self)
 
     def _export_report(self):
         self._save_report_to_project()

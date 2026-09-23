@@ -1173,3 +1173,274 @@ def add_tooltip(widget, text: str, delay_ms: int = 350) -> ToolTip:
     """Привязывает всплывающую подсказку к любому элементу интерфейса."""
     return ToolTip(widget, text, delay_ms=delay_ms)
 
+
+class CartogramDxfExportDialog(tk.Toplevel):
+    """Диалог экспорта картограммы земляных масс в формат AutoCAD DXF (Tkinter/CustomTkinter)."""
+    def __init__(self, parent, calc_results=None, points=None, boundary_indices=None, default_dir=None):
+        super().__init__(parent)
+        self.title("📐 Экспорт картограммы в DXF (AutoCAD)")
+        self.resizable(False, False)
+        bg = "#1a1e24" if ctk.get_appearance_mode().lower() == "dark" else "#f5f6f8"
+        self.configure(bg=bg)
+        set_window_dark_titlebar(self)
+        self.transient(parent)
+        self.grab_set()
+
+        self.calc_results = calc_results if calc_results is not None else getattr(parent, "calc_results", {})
+        self.points = points if points is not None else getattr(parent, "points", [])
+        self.boundary_indices = boundary_indices if boundary_indices is not None else getattr(parent, "boundary_indices", [])
+
+        # Расчет размеров контура и рекомендуемого шага сетки
+        self._auto_step = 10.0
+        boundary = self.calc_results.get("boundary") if self.calc_results else None
+        if boundary is None or len(boundary) < 3:
+            if self.points and self.boundary_indices and len(self.boundary_indices) >= 3:
+                boundary = np.array([[self.points[i].x, self.points[i].y] for i in self.boundary_indices])
+        if boundary is not None and len(boundary) >= 3:
+            poly_2d = boundary[:, :2]
+            sx = float(np.max(poly_2d[:, 0]) - np.min(poly_2d[:, 0]))
+            sy = float(np.max(poly_2d[:, 1]) - np.min(poly_2d[:, 1]))
+            from dxf_exporter import choose_auto_grid_step
+            self._auto_step = choose_auto_grid_step(sx, sy)
+
+        proj_dir = default_dir or getattr(parent, "_current_project_dir", None)
+        if not proj_dir:
+            from app_utils import get_projects_dir
+            proj_dir = get_projects_dir()
+        self._default_dir = proj_dir
+
+        self.geometry("540x580")
+        self._init_ui()
+
+    def _init_ui(self):
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.pack(fill=tk.BOTH, expand=True, padx=16, pady=14)
+
+        # Заголовок
+        ctk.CTkLabel(
+            container,
+            text="Параметры экспорта картограммы в DXF",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            anchor="w"
+        ).pack(fill=tk.X, pady=(0, 2))
+
+        ctk.CTkLabel(
+            container,
+            text="Чертеж AutoCAD R2010 (AC1024, UTF-8) по стандарту ГОСТ 21.508-2020",
+            font=ctk.CTkFont(size=11),
+            text_color=("gray40", "gray60"),
+            anchor="w"
+        ).pack(fill=tk.X, pady=(0, 10))
+
+        # Секция 1: Параметры сетки
+        f_grid = ctk.CTkFrame(container)
+        f_grid.pack(fill=tk.X, pady=(0, 10), padx=2)
+        f_grid.columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(f_grid, text="Шаг сетки картограммы:", anchor="w").grid(row=0, column=0, sticky="w", padx=10, pady=6)
+        
+        step_items = [f"Авто ({self._auto_step:.1f} м)", "2.0 м", "5.0 м", "10.0 м", "20.0 м", "50.0 м", "Вручную"]
+        self.cbo_grid_step = ctk.CTkComboBox(
+            f_grid,
+            values=step_items,
+            command=self._on_grid_step_combo_changed,
+            width=150
+        )
+        self.cbo_grid_step.set(step_items[0])
+        self.cbo_grid_step.grid(row=0, column=1, sticky="w", padx=6, pady=6)
+
+        self.ent_grid_step = ctk.CTkEntry(f_grid, width=70)
+        self.ent_grid_step.insert(0, f"{self._auto_step:.1f}")
+        self.ent_grid_step.configure(state="disabled")
+        self.ent_grid_step.grid(row=0, column=2, sticky="e", padx=(0, 10), pady=6)
+
+        ctk.CTkLabel(f_grid, text="Высота текста отметок (м):", anchor="w").grid(row=1, column=0, sticky="w", padx=10, pady=6)
+        self.ent_text_height = ctk.CTkEntry(f_grid, width=150)
+        default_th = max(0.20, round(self._auto_step * 0.065, 2))
+        self.ent_text_height.insert(0, f"{default_th:.2f}")
+        self.ent_text_height.grid(row=1, column=1, columnspan=2, sticky="w", padx=6, pady=6)
+
+        self.chk_coord_swap = ctk.CTkCheckBox(
+            f_grid,
+            text="Ориентация ГОСТ: X_cad = Восток, Y_cad = Север"
+        )
+        self.chk_coord_swap.select()
+        self.chk_coord_swap.grid(row=2, column=0, columnspan=3, sticky="w", padx=10, pady=(4, 8))
+
+        # Секция 2: Слои и элементы
+        f_elems = ctk.CTkFrame(container)
+        f_elems.pack(fill=tk.X, pady=(0, 10), padx=2)
+        f_elems.columnconfigure(0, weight=1)
+        f_elems.columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            f_elems,
+            text="Включаемые элементы и слои чертежа:",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            anchor="w"
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=(6, 4))
+
+        self.chk_grid = ctk.CTkCheckBox(f_elems, text="Сетка картограммы (квадраты)")
+        self.chk_grid.select()
+        self.chk_grid.grid(row=1, column=0, sticky="w", padx=10, pady=3)
+
+        self.chk_node_elevations = ctk.CTkCheckBox(f_elems, text="Отметки в узлах (красная/черная/рабочая)")
+        self.chk_node_elevations.select()
+        self.chk_node_elevations.grid(row=1, column=1, sticky="w", padx=10, pady=3)
+
+        self.chk_cell_volumes = ctk.CTkCheckBox(f_elems, text="Объемы и площади ячеек (Vн, Vв, S)")
+        self.chk_cell_volumes.select()
+        self.chk_cell_volumes.grid(row=2, column=0, sticky="w", padx=10, pady=3)
+
+        self.chk_zero_line = ctk.CTkCheckBox(f_elems, text="Линия нулевых работ")
+        self.chk_zero_line.select()
+        self.chk_zero_line.grid(row=2, column=1, sticky="w", padx=10, pady=3)
+
+        self.chk_boundary = ctk.CTkCheckBox(f_elems, text="Контур границы работ")
+        self.chk_boundary.select()
+        self.chk_boundary.grid(row=3, column=0, sticky="w", padx=10, pady=3)
+
+        self.chk_survey_points = ctk.CTkCheckBox(f_elems, text="Исходные точки съёмки (с отметками)")
+        self.chk_survey_points.select()
+        self.chk_survey_points.grid(row=3, column=1, sticky="w", padx=10, pady=3)
+
+        self.chk_balance_table = ctk.CTkCheckBox(f_elems, text="Сводная ведомость объемов (баланс ГОСТ)")
+        self.chk_balance_table.select()
+        self.chk_balance_table.grid(row=4, column=0, columnspan=2, sticky="w", padx=10, pady=(3, 8))
+
+        # Секция 3: Путь к файлу
+        f_file = ctk.CTkFrame(container)
+        f_file.pack(fill=tk.X, pady=(0, 12), padx=2)
+        f_file.columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            f_file,
+            text="Файл для сохранения (.dxf):",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            anchor="w"
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=(6, 2))
+
+        folder_name = os.path.basename(self._default_dir) if self._default_dir else "Проект"
+        default_fn = f"картограмма_{folder_name}.dxf" if folder_name and folder_name != "Проект" else "картограмма_объемов.dxf"
+        default_full_path = os.path.join(self._default_dir, default_fn)
+
+        self.ent_path = ctk.CTkEntry(f_file)
+        self.ent_path.insert(0, default_full_path)
+        self.ent_path.grid(row=1, column=0, sticky="ew", padx=(10, 6), pady=(0, 8))
+
+        btn_browse = ctk.CTkButton(f_file, text="Обзор...", width=80, command=self._browse_file)
+        btn_browse.grid(row=1, column=1, sticky="e", padx=(0, 10), pady=(0, 8))
+
+        # Нижняя панель кнопок
+        btn_frame = ctk.CTkFrame(container, fg_color="transparent")
+        btn_frame.pack(fill=tk.X, side=tk.BOTTOM, pady=(8, 0))
+
+        btn_cancel = ctk.CTkButton(
+            btn_frame,
+            text="Отмена",
+            width=100,
+            fg_color="gray40",
+            hover_color="gray30",
+            command=self.destroy
+        )
+        btn_cancel.pack(side=tk.RIGHT, padx=(6, 0))
+
+        btn_export = ctk.CTkButton(
+            btn_frame,
+            text="📐 Экспортировать DXF",
+            width=160,
+            command=self._do_export
+        )
+        btn_export.pack(side=tk.RIGHT)
+
+        self.bind("<Escape>", lambda e: self.destroy())
+
+    def _on_grid_step_combo_changed(self, choice: str):
+        val_map = {
+            "2.0 м": 2.0,
+            "5.0 м": 5.0,
+            "10.0 м": 10.0,
+            "20.0 м": 20.0,
+            "50.0 м": 50.0,
+        }
+        if choice in val_map:
+            step = val_map[choice]
+            self.ent_grid_step.configure(state="normal")
+            self.ent_grid_step.delete(0, tk.END)
+            self.ent_grid_step.insert(0, f"{step:.1f}")
+            self.ent_grid_step.configure(state="disabled")
+            self.ent_text_height.delete(0, tk.END)
+            self.ent_text_height.insert(0, f"{max(0.20, round(step * 0.065, 2)):.2f}")
+        elif "Авто" in choice:
+            self.ent_grid_step.configure(state="normal")
+            self.ent_grid_step.delete(0, tk.END)
+            self.ent_grid_step.insert(0, f"{self._auto_step:.1f}")
+            self.ent_grid_step.configure(state="disabled")
+            self.ent_text_height.delete(0, tk.END)
+            self.ent_text_height.insert(0, f"{max(0.20, round(self._auto_step * 0.065, 2)):.2f}")
+        else:  # Вручную
+            self.ent_grid_step.configure(state="normal")
+
+    def _browse_file(self):
+        from tkinter import filedialog
+        cur = self.ent_path.get().strip() or self._default_dir
+        fn = filedialog.asksaveasfilename(
+            parent=self,
+            title="Сохранить чертеж картограммы в формате DXF",
+            initialfile=os.path.basename(cur),
+            initialdir=os.path.dirname(cur) if os.path.dirname(cur) else self._default_dir,
+            filetypes=[("AutoCAD DXF Files", "*.dxf"), ("Все файлы", "*.*")]
+        )
+        if fn:
+            if not fn.lower().endswith(".dxf"):
+                fn += ".dxf"
+            self.ent_path.delete(0, tk.END)
+            self.ent_path.insert(0, fn)
+
+    def _do_export(self):
+        out_path = self.ent_path.get().strip()
+        if not out_path:
+            messagebox.showwarning("Внимание", "Укажите путь для сохранения файла DXF.", parent=self)
+            return
+
+        if not out_path.lower().endswith(".dxf"):
+            out_path += ".dxf"
+
+        try:
+            step_val = float(self.ent_grid_step.get().replace(",", ".").strip())
+        except ValueError:
+            step_val = self._auto_step
+
+        try:
+            th_val = float(self.ent_text_height.get().replace(",", ".").strip())
+        except ValueError:
+            th_val = max(0.20, round(step_val * 0.065, 2))
+
+        coord_swap = bool(self.chk_coord_swap.get())
+
+        try:
+            from dxf_exporter import export_cartogram_dxf
+            ok, msg = export_cartogram_dxf(
+                calc_results=self.calc_results,
+                points=self.points,
+                boundary_indices=self.boundary_indices,
+                output_path=out_path,
+                grid_step=step_val,
+                text_height=th_val,
+                coord_swap=coord_swap,
+                include_grid=bool(self.chk_grid.get()),
+                include_node_elevations=bool(self.chk_node_elevations.get()),
+                include_cell_volumes=bool(self.chk_cell_volumes.get()),
+                include_zero_line=bool(self.chk_zero_line.get()),
+                include_boundary=bool(self.chk_boundary.get()),
+                include_survey_points=bool(self.chk_survey_points.get()),
+                include_balance_table=bool(self.chk_balance_table.get()),
+            )
+            if ok:
+                messagebox.showinfo("Успешно", f"Чертеж картограммы успешно экспортирован:\n{out_path}", parent=self)
+                self.destroy()
+            else:
+                messagebox.showerror("Ошибка экспорта DXF", f"Не удалось экспортировать чертеж:\n{msg}", parent=self)
+        except Exception as e:
+            messagebox.showerror("Исключение", f"Произошла ошибка при экспорте:\n{e}", parent=self)
+
