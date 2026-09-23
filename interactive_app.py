@@ -5376,7 +5376,7 @@ class VolumeApp(_AppBase):
             coords = np.array([[p.x, p.y, p.h] for p in self.points], dtype=float)
             h_vals = coords[:, 2]
             h_min, h_max = float(np.min(h_vals)), float(np.max(h_vals))
-            if h_max - h_min < 0.20:
+            if h_max - h_min < 0.04:
                 return False
             span = max(float(np.ptp(coords[:, 0])), float(np.ptp(coords[:, 1])))
             if span < 1e-4:
@@ -5386,19 +5386,22 @@ class VolumeApp(_AppBase):
             r_tol = min(0.35, max(0.06, span * 0.05))
             tree = cKDTree(coords[:, :2])
             pairs = tree.query_pairs(r=r_tol)
-            vert_pairs = [(i, j) for i, j in pairs if abs(coords[i, 2] - coords[j, 2]) >= 0.20]
+            vert_pairs = [(i, j) for i, j in pairs if abs(coords[i, 2] - coords[j, 2]) >= 0.04]
 
-            # 1. Значительная доля точек состоит из вертикальных пар (например, углы фундамента)
-            if len(vert_pairs) >= 3 and (len(vert_pairs) * 2 >= min(len(self.points) * 0.25, 20)):
+            # 1. Значительная доля точек состоит из вертикальных пар (например, углы фундамента или плиты от 5 см)
+            if len(vert_pairs) >= 3 and (len(vert_pairs) * 2 >= len(self.points) * 0.25):
                 return True
 
-            # 2. Истинный бимодальный разрыв по высоте (gap >= 0.25 м без промежуточных точек) и перекрытие в плане (IoU > 0.40)
+            # 2. Истинный бимодальный разрыв по высоте (gap >= 0.20 м без промежуточных точек)
+            # и перекрытие в плане (IoU > 0.45 и area_ratio >= 0.50)
+            if h_max - h_min < 0.20:
+                return False
             split_candidate = (h_min + h_max) / 2.0
             idx_top = [i for i, h in enumerate(h_vals) if h > split_candidate]
             idx_bot = [i for i, h in enumerate(h_vals) if h <= split_candidate]
             if len(idx_top) >= 3 and len(idx_bot) >= 3:
                 gap = float(np.min(coords[idx_top, 2]) - np.max(coords[idx_bot, 2]))
-                if gap >= 0.25:
+                if gap >= 0.20:
                     bbox_top = (np.min(coords[idx_top, 0]), np.max(coords[idx_top, 0]),
                                 np.min(coords[idx_top, 1]), np.max(coords[idx_top, 1]))
                     bbox_bot = (np.min(coords[idx_bot, 0]), np.max(coords[idx_bot, 0]),

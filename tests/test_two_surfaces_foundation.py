@@ -91,6 +91,39 @@ def test_heuristic_rejects_single_surface_mound():
     assert app._detect_two_surfaces_heuristic() is False
 
 
+def test_heuristic_detects_thin_slab_5cm():
+    app = VolumeApp.__new__(VolumeApp)
+    app.points = [
+        GeoPoint(id="1", x=0.0, y=0.0, h=100.00, surface_type="auto"),
+        GeoPoint(id="2", x=2.0, y=0.0, h=100.00, surface_type="auto"),
+        GeoPoint(id="3", x=2.0, y=2.0, h=100.00, surface_type="auto"),
+        GeoPoint(id="4", x=0.0, y=2.0, h=100.00, surface_type="auto"),
+        GeoPoint(id="5", x=0.01, y=0.01, h=100.05, surface_type="auto"),
+        GeoPoint(id="6", x=1.99, y=0.02, h=100.05, surface_type="auto"),
+        GeoPoint(id="7", x=2.01, y=1.99, h=100.05, surface_type="auto"),
+        GeoPoint(id="8", x=0.02, y=2.01, h=100.05, surface_type="auto"),
+    ]
+    app._invalidate_boundary_cache()
+    assert app._detect_two_surfaces_heuristic() is True
+
+
+def test_heuristic_rejects_large_single_surface_with_sparse_slopes():
+    # Large survey (e.g. 100 points) where a few points happen to have close horizontal distance and > 5cm dH
+    # but they do NOT make up >= 25% of total points.
+    app = VolumeApp.__new__(VolumeApp)
+    pts = []
+    # Grid 10x10
+    idx = 1
+    for r in range(10):
+        for c in range(10):
+            # smooth slope with continuous elevations
+            pts.append(GeoPoint(id=str(idx), x=float(c * 2.0), y=float(r * 2.0), h=100.0 + (r + c) * 0.1, surface_type="auto"))
+            idx += 1
+    app.points = pts
+    app._invalidate_boundary_cache()
+    assert app._detect_two_surfaces_heuristic() is False
+
+
 def test_auto_classify_foundation():
     app = create_foundation_mock_app()
     app._auto_classify_initial()
