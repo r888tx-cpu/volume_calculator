@@ -576,10 +576,10 @@ class VolumeApp(_AppBase):
 
         btn_box2 = ctk.CTkFrame(grp_load, fg_color="transparent")
         btn_box2.pack(fill=tk.X, pady=(0, 2))
-        b_load = ctk.CTkButton(btn_box2, text="Загрузить проект", width=0, height=24,
-                               command=self._load_selected_project_button)
-        b_load.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
-        add_tooltip(b_load, "Загрузить выбранный проект со всеми файлами, контурами и настройками")
+        b_folder = ctk.CTkButton(btn_box2, text="📁 Открыть папку", width=0, height=24,
+                                 command=self._open_project_folder)
+        b_folder.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
+        add_tooltip(b_folder, "Открыть папку текущего проекта в Проводнике Windows")
 
         b_del = ctk.CTkButton(btn_box2, text="Удалить проект", width=0, height=24,
                               fg_color="#8B2020", hover_color="#A02828",
@@ -3125,13 +3125,28 @@ class VolumeApp(_AppBase):
             self._update_files_combobox_for_project(folder_path)
             self.load_project_from_folder(folder_path)
 
-    def _load_selected_project_button(self):
-        """Кнопка 'Загрузить проект'"""
-        proj_name = self.cbo_projects.get()
-        if not proj_name or proj_name not in self._project_folders:
-            messagebox.showinfo("Информация", "Выберите проект из списка.")
-            return
-        self.load_project_from_folder(self._project_folders[proj_name])
+    def _open_project_folder(self):
+        """Открывает папку текущего проекта в Проводнике Windows"""
+        proj_name = self.cbo_projects.get() if hasattr(self.cbo_projects, "get") else ""
+        folder_path = None
+        if proj_name and proj_name in getattr(self, "_project_folders", {}):
+            folder_path = self._project_folders[proj_name]
+        elif getattr(self, "_current_project_dir", None) and os.path.isdir(self._current_project_dir):
+            folder_path = self._current_project_dir
+        else:
+            from app_utils import get_projects_dir
+            folder_path = get_projects_dir()
+
+        if folder_path and os.path.exists(folder_path):
+            try:
+                os.startfile(folder_path)
+            except Exception:
+                import subprocess
+                subprocess.Popen(["explorer", os.path.normpath(folder_path)])
+        else:
+            messagebox.showinfo("Информация", "Папка проекта не найдена.")
+
+    _load_selected_project_button = _open_project_folder
 
     def _on_cbo_file_selected(self, event):
         """При выборе конкретного файла координат внутри проекта (ttk legacy)"""
