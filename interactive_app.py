@@ -3378,6 +3378,11 @@ class VolumeApp(_AppBase):
         self.cbo_projects.set(proj_name)
         if len(self.boundary_indices) >= 3:
             self._schedule_boundary_calc(300)
+        else:
+            try:
+                self._select_tab(self.TAB_2D)
+            except Exception:
+                pass
 
 
     # ==================== СОХРАНЕНИЕ / ЗАГРУЗКА ПРОЕКТА ====================
@@ -3785,6 +3790,11 @@ class VolumeApp(_AppBase):
         # Автоматический расчёт объёма и переход на схему в плане после загрузки
         if len(self.boundary_indices) >= 3:
             self.after(200, self._auto_calc_and_show_plan)
+        else:
+            try:
+                self._select_tab(self.TAB_2D)
+            except Exception:
+                pass
 
     def _import_dxf_file(self, filepath: str):
         """Импортирует съёмку и контур из файла чертежа AutoCAD DXF"""
@@ -3838,6 +3848,11 @@ class VolumeApp(_AppBase):
 
         if len(self.boundary_indices) >= 3:
             self.after(200, self._auto_calc_and_show_plan)
+        else:
+            try:
+                self._select_tab(self.TAB_2D)
+            except Exception:
+                pass
 
     def _open_remap_dialog(self):
         """Открывает диалог ручного переопределения колонок координат"""
@@ -3864,18 +3879,18 @@ class VolumeApp(_AppBase):
 
     # ==================== ЛОГИКА КОНТУРА И ПОВЕРХНОСТЕЙ ====================
 
-    def _auto_classify_initial(self):
+    def _auto_classify_initial(self, force_hull: bool = False):
         if not self.points:
             return
         xy = np.array([[p.x, p.y] for p in self.points])
-        if len(xy) >= 3:
+        if len(xy) >= 3 and (len(xy) <= 7 or force_hull):
             try:
                 hull = ConvexHull(xy)
                 self.boundary_indices = [int(v) for v in hull.vertices]
             except Exception:
                 self.boundary_indices = list(range(len(self.points)))
         else:
-            self.boundary_indices = list(range(len(self.points)))
+            self.boundary_indices = []
 
         if getattr(self, "_is_separate_surfaces", False):
             # Внимание: если режим двух поверхностей уже выставлен (например, при раздельном импорте двух файлов),
@@ -3890,7 +3905,7 @@ class VolumeApp(_AppBase):
         else:
             self._is_separate_surfaces = False
 
-        if getattr(self, "_is_separate_surfaces", False):
+        if getattr(self, "_is_separate_surfaces", False) and (len(self.points) <= 7 or force_hull):
             self._adjust_work_zone_boundary_for_two_surfaces(xy)
 
         self._invalidate_boundary_cache()
@@ -3943,9 +3958,9 @@ class VolumeApp(_AppBase):
             pass
 
     def _on_mode_change(self):
-        mode = self.current_mode.get()
+        mode = self.current_mode.get() if hasattr(self.current_mode, "get") else self.current_mode
         if mode == "auto_hull":
-            self._auto_classify_initial()
+            self._auto_classify_initial(force_hull=True)
         self._update_all_views()
 
     def _reset_boundary(self):

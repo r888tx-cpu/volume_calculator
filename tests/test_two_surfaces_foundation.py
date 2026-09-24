@@ -190,7 +190,7 @@ def test_foundation_volume_calculation():
 
 def test_foundation_tin_top_surface():
     app = create_foundation_mock_app()
-    app._auto_classify_initial()
+    app._auto_classify_initial(force_hull=True)
 
     # Mock ax_tin add_patch to capture polygons
     patches = []
@@ -238,7 +238,7 @@ def test_separate_surfaces_import_and_volume_calculation():
 
     app.points = pts_top + pts_bot
     app.boundary_indices = []
-    app._auto_classify_initial()
+    app._auto_classify_initial(force_hull=True)
 
     assert app._is_separate_surfaces is True
     assert app._is_two_surfaces() is True
@@ -278,7 +278,7 @@ def test_separate_surfaces_unequal_pit_in_site():
     app._is_separate_surfaces = True
     app.points = pts_top + pts_bot
     app.boundary_indices = []
-    app._auto_classify_initial()
+    app._auto_classify_initial(force_hull=True)
 
     # Граница должна автоматически установиться по контуру выемки (дно котлована)
     boundary_pts = [app.points[i] for i in app.boundary_indices]
@@ -315,7 +315,7 @@ def test_separate_surfaces_unequal_embankment_on_site():
     app._is_separate_surfaces = True
     app.points = pts_top + pts_bot
     app.boundary_indices = []
-    app._auto_classify_initial()
+    app._auto_classify_initial(force_hull=True)
 
     # Граница должна автоматически установиться по контуру насыпи (top)
     boundary_pts = [app.points[i] for i in app.boundary_indices]
@@ -331,5 +331,36 @@ def test_separate_surfaces_unequal_embankment_on_site():
     assert pytest.approx(res["v_net"], rel=0.02) == 6400.0
     assert pytest.approx(res["v_fill"], rel=0.02) == 6400.0
     assert pytest.approx(res["v_cut"], abs=0.02) == 0.0
+
+
+def test_auto_boundary_point_count_limit():
+    app = create_foundation_mock_app()
+    # 5 точек (<= 7) -> контур создаётся автоматически
+    app.points = [GeoPoint(id=str(i), x=float(i * 10), y=float(i % 2 * 10), h=100.0) for i in range(5)]
+    app.boundary_indices = []
+    app._auto_classify_initial()
+    assert len(app.boundary_indices) >= 3
+
+    # 7 точек (<= 7) -> контур создаётся автоматически
+    app.points = [GeoPoint(id=str(i), x=float(np.cos(i) * 10), y=float(np.sin(i) * 10), h=100.0) for i in range(7)]
+    app.boundary_indices = []
+    app._auto_classify_initial()
+    assert len(app.boundary_indices) >= 3
+
+    # 8 точек (> 7) -> контур автоматически НЕ создаётся
+    app.points = [GeoPoint(id=str(i), x=float(np.cos(i) * 10), y=float(np.sin(i) * 10), h=100.0) for i in range(8)]
+    app.boundary_indices = []
+    app._auto_classify_initial()
+    assert len(app.boundary_indices) == 0
+
+    # 50 точек (> 7) -> контур автоматически НЕ создаётся
+    app.points = [GeoPoint(id=str(i), x=float(i), y=float(i), h=100.0) for i in range(50)]
+    app.boundary_indices = []
+    app._auto_classify_initial()
+    assert len(app.boundary_indices) == 0
+
+    # force_hull=True строит оболочку вне зависимости от количества точек
+    app._auto_classify_initial(force_hull=True)
+    assert len(app.boundary_indices) >= 3
 
 
