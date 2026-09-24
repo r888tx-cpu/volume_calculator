@@ -12,10 +12,9 @@
 
 Установка Python не требуется:
 
-| ОС | Рекомендуемая версия | Графический стек | Ссылка на скачивание |
+| ОС | Версия | Графический стек | Ссылка на скачивание |
 | :--- | :---: | :---: | :--- |
-| **Windows 7 / 8 / 8.1** (64-bit) | **v1.0.1** *(совместимая)* | Tkinter / Win32 GDI | 👉 [**GeoVolumePro_v1.0.1_win64.zip**](https://github.com/r888tx-cpu/volume_calculator/releases/download/v1.0.1/GeoVolumePro_v1.0.1_win64.zip) *(~55 МБ)* *(зеркало: [v1.0.0](https://github.com/r888tx-cpu/volume_calculator/releases/download/v1.0.0/GeoVolumePro_v1.0.0_win64.zip))* |
-| **Windows 10 / 11** (64-bit) | **v2.0.0** *(актуальная)* | Qt6 / Fluent Design | 👉 [**GeoVolumePro_v2.0.0_win64.zip**](https://github.com/r888tx-cpu/volume_calculator/releases/download/v2.0.0/GeoVolumePro_v2.0.0_win64.zip) *(~73 МБ)* |
+| **Windows 7 / 8 / 8.1 / 10 / 11** (64-bit) | **v1.0.1** *(актуальная)* | Tkinter / Win32 GDI | 👉 [**GeoVolumePro_v1.0.1_win64.zip**](https://github.com/r888tx-cpu/volume_calculator/releases/download/v1.0.1/GeoVolumePro_v1.0.1_win64.zip) *(~65 МБ)* |
 
 **Запуск:** распакуйте архив и запустите `GeoVolumePro.exe`.
 
