@@ -568,11 +568,12 @@ class VolumeApp(_AppBase):
         grp_load = _group(inner, " 1. Проекты и файлы координат ")
 
         # Сохраненные проекты (выпадающий список по папкам Projects)
-        ctk.CTkLabel(grp_load, text="Папка проекта (Projects):", anchor="w", height=16).pack(fill=tk.X)
+        app_folder_name = os.path.basename(os.path.normpath(get_app_dir())) or "GeoVolumePro"
+        ctk.CTkLabel(grp_load, text=f"Выбор проекта ({app_folder_name}/Projects):", anchor="w", height=16).pack(fill=tk.X)
         self.cbo_projects = ctk.CTkComboBox(grp_load, values=[], height=26,
                                              command=self._on_cbo_project_selected)
         self.cbo_projects.pack(fill=tk.X, pady=(1, 2))
-        add_tooltip(self.cbo_projects, "Выбор сохраненного проекта из папки Projects")
+        add_tooltip(self.cbo_projects, f"Выбор сохраненного проекта из папки {app_folder_name}/Projects")
 
         btn_box2 = ctk.CTkFrame(grp_load, fg_color="transparent")
         btn_box2.pack(fill=tk.X, pady=(0, 2))
