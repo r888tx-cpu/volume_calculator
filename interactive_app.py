@@ -3900,7 +3900,7 @@ class VolumeApp(_AppBase):
         if not self.points:
             return
         xy = np.array([[p.x, p.y] for p in self.points])
-        if len(xy) >= 3 and (len(xy) <= 7 or force_hull):
+        if len(xy) >= 3 and (len(xy) <= 8 or force_hull):
             try:
                 hull = ConvexHull(xy)
                 self.boundary_indices = [int(v) for v in hull.vertices]
@@ -3922,7 +3922,7 @@ class VolumeApp(_AppBase):
         else:
             self._is_separate_surfaces = False
 
-        if getattr(self, "_is_separate_surfaces", False) and (len(self.points) <= 7 or force_hull):
+        if getattr(self, "_is_separate_surfaces", False) and (len(self.points) <= 8 or force_hull):
             self._adjust_work_zone_boundary_for_two_surfaces(xy)
 
         self._invalidate_boundary_cache()

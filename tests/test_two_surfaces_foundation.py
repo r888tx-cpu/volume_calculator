@@ -335,25 +335,25 @@ def test_separate_surfaces_unequal_embankment_on_site():
 
 def test_auto_boundary_point_count_limit():
     app = create_foundation_mock_app()
-    # 5 точек (<= 7) -> контур создаётся автоматически
+    # 5 точек (<= 8) -> контур создаётся автоматически
     app.points = [GeoPoint(id=str(i), x=float(i * 10), y=float(i % 2 * 10), h=100.0) for i in range(5)]
     app.boundary_indices = []
     app._auto_classify_initial()
     assert len(app.boundary_indices) >= 3
 
-    # 7 точек (<= 7) -> контур создаётся автоматически
-    app.points = [GeoPoint(id=str(i), x=float(np.cos(i) * 10), y=float(np.sin(i) * 10), h=100.0) for i in range(7)]
+    # 8 точек (<= 8) -> контур создаётся автоматически
+    app.points = [GeoPoint(id=str(i), x=float(np.cos(i) * 10), y=float(np.sin(i) * 10), h=100.0) for i in range(8)]
     app.boundary_indices = []
     app._auto_classify_initial()
     assert len(app.boundary_indices) >= 3
 
-    # 8 точек (> 7) -> контур автоматически НЕ создаётся
-    app.points = [GeoPoint(id=str(i), x=float(np.cos(i) * 10), y=float(np.sin(i) * 10), h=100.0) for i in range(8)]
+    # 9 точек (> 8) -> контур автоматически НЕ создаётся
+    app.points = [GeoPoint(id=str(i), x=float(np.cos(i) * 10), y=float(np.sin(i) * 10), h=100.0) for i in range(9)]
     app.boundary_indices = []
     app._auto_classify_initial()
     assert len(app.boundary_indices) == 0
 
-    # 50 точек (> 7) -> контур автоматически НЕ создаётся
+    # 50 точек (> 8) -> контур автоматически НЕ создаётся
     app.points = [GeoPoint(id=str(i), x=float(i), y=float(i), h=100.0) for i in range(50)]
     app.boundary_indices = []
     app._auto_classify_initial()
