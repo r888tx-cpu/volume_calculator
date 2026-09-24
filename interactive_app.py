@@ -718,14 +718,6 @@ class VolumeApp(_AppBase):
                                                anchor="w", wraplength=340, height=16)
         self.lbl_report_status.pack(anchor=tk.W, padx=6, pady=(0, 2))
 
-        self.btn_export_dxf = ctk.CTkButton(
-            self.grp_results,
-            text="📐 Экспорт чертежа в DXF",
-            height=26,
-            font=ctk.CTkFont(size=11),
-            command=lambda: self._export_tab_dxf()
-        )
-        self.btn_export_dxf.pack(fill=tk.X, padx=6, pady=(0, 4))
 
 
     # ==================== СТИЛИЗАЦИЯ TTK / TEXT ПОД ТЕМУ CTK ====================
