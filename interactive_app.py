@@ -588,12 +588,7 @@ class VolumeApp(_AppBase):
         b_del.pack(side=tk.RIGHT, padx=(2, 0))
         add_tooltip(b_del, "Удалить выбранный проект и связанные данные")
 
-        # Файлы координат
-        ctk.CTkLabel(grp_load, text="Файл координат в проекте:", anchor="w", height=16).pack(fill=tk.X)
-        self.cbo_files = ctk.CTkComboBox(grp_load, values=[], height=26,
-                                          command=self._on_cbo_file_selected_cmd)
-        self.cbo_files.pack(fill=tk.X, pady=(1, 2))
-        add_tooltip(self.cbo_files, "Выбор активного файла координат в текущем проекте")
+        self.cbo_files = None
 
         btn_box1 = ctk.CTkFrame(grp_load, fg_color="transparent")
         btn_box1.pack(fill=tk.X, pady=(0, 2))
@@ -3099,11 +3094,14 @@ class VolumeApp(_AppBase):
                 self._update_files_combobox_for_project(self._project_folders[cur_sel])
         else:
             self.cbo_projects.set("")
-            self.cbo_files.configure(values=[])
-            self.cbo_files.set("")
+            if getattr(self, "cbo_files", None) is not None:
+                self.cbo_files.configure(values=[])
+                self.cbo_files.set("")
 
     def _update_files_combobox_for_project(self, folder_path: str):
         """Обновляет список файлов координат для выбранной папки проекта"""
+        if getattr(self, "cbo_files", None) is None:
+            return
         coord_files = []
         for ext in ["*.txt", "*.csv", "*.dat", "*.xyz", "*.pts", "*.TXT", "*.CSV", "*.DAT"]:
             for f in glob.glob(os.path.join(folder_path, ext)):
