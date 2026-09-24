@@ -34,7 +34,6 @@ datas = [
     ('dxf_importer.py', '.'),
     ('app_icon.ico', '.'),
     ('readme.html', '.'),
-    ('README.md', '.'),
     ('report_icon.png', '.'),
     ('report_icon_large.png', '.'),
     ('Projects', 'Projects'),
@@ -141,12 +140,10 @@ coll = COLLECT(
     name='GeoVolumePro',
 )
 
-# Копируем readme.html, README.md, app_icon.ico и реальные проекты Projects в корень дистрибутива рядом с exe
+# Копируем readme.html, app_icon.ico и реальные проекты Projects в корень дистрибутива рядом с exe
 _dist_root = os.path.join(DISTPATH, 'GeoVolumePro')
 os.makedirs(_dist_root, exist_ok=True)
 shutil.copy('readme.html', os.path.join(_dist_root, 'readme.html'))
-if os.path.exists('README.md'):
-    shutil.copy('README.md', os.path.join(_dist_root, 'README.md'))
 shutil.copy('app_icon.ico', os.path.join(_dist_root, 'app_icon.ico'))
 _dist_projects = os.path.join(_dist_root, 'Projects')
 if os.path.exists('Projects'):
