@@ -259,20 +259,21 @@ def export_cartogram_dxf(
                 msp.add_line((xc, yc - cross_sz), (xc, yc + cross_sz),
                              dxfattribs={"layer": "0_СЕТКА_КАРТОГРАММЫ", "lineweight": 15})
 
-                # Рабочая отметка (слева вверху от узла)
+                # Отметки в узлах по ГОСТ (выстраиваются в 3 аккуратные строки справа от узла):
+                # 1. Красная проектная отметка (Верх)
+                t_red = msp.add_text(f"{z_t:.2f}", dxfattribs={"layer": "ОТМЕТКИ_КРАСНЫЕ", "height": th})
+                t_red.set_placement((xc + th * 0.25, yc + th * 0.40), align=TextEntityAlignment.LEFT)
+
+                # 2. Черная фактическая отметка (Низ) - на 1 надпись ниже верха
+                t_blk = msp.add_text(f"{z_b:.2f}", dxfattribs={"layer": "ОТМЕТКИ_ЧЕРНЫЕ", "height": th})
+                t_blk.set_placement((xc + th * 0.25, yc - th * 0.80), align=TextEntityAlignment.LEFT)
+
+                # 3. Рабочая отметка / разница высот (dh) - на 2 надписи ниже верха (под отметкой низа)
                 sign_str = "+" if dh > 0.005 else ("-" if dh < -0.005 else "")
                 dh_str = f"{sign_str}{abs(dh):.2f}"
                 layer_dh = "ОТМЕТКИ_РАБОЧИЕ_НАСЫПЬ" if dh >= 0 else "ОТМЕТКИ_РАБОЧИЕ_ВЫЕМКА"
                 t_dh = msp.add_text(dh_str, dxfattribs={"layer": layer_dh, "height": th})
-                t_dh.set_placement((xc - th * 0.25, yc + th * 0.35), align=TextEntityAlignment.RIGHT)
-
-                # Красная проектная отметка (справа вверху от узла)
-                t_red = msp.add_text(f"{z_t:.2f}", dxfattribs={"layer": "ОТМЕТКИ_КРАСНЫЕ", "height": th})
-                t_red.set_placement((xc + th * 0.25, yc + th * 0.35), align=TextEntityAlignment.LEFT)
-
-                # Черная фактическая отметка (справа внизу от узла)
-                t_blk = msp.add_text(f"{z_b:.2f}", dxfattribs={"layer": "ОТМЕТКИ_ЧЕРНЫЕ", "height": th})
-                t_blk.set_placement((xc + th * 0.25, yc - th * 1.15), align=TextEntityAlignment.LEFT)
+                t_dh.set_placement((xc + th * 0.25, yc - th * 2.00), align=TextEntityAlignment.LEFT)
 
         # ── 6. Линия нулевых работ (нулевой баланс) ────────────────────────────
         if include_zero_line:
@@ -402,7 +403,7 @@ def export_cartogram_dxf(
 
         # ── 9. Сводная ведомость земляных масс (таблица баланса) ───────────────
         if include_balance_table:
-            tb_th = th * 1.10
+            tb_th = th * 0.65  # Компактный, строгий шрифт для таблицы
             # Размещаем таблицу справа от картограммы с отступом
             all_cad_x = [to_cad(pt[0], pt[1])[0] for pt in poly_2d]
             all_cad_y = [to_cad(pt[0], pt[1])[1] for pt in poly_2d]
@@ -423,9 +424,9 @@ def export_cartogram_dxf(
                 ("Программа расчета:", "GeoVolumePro"),
             ]
 
-            row_h = tb_th * 1.8
-            col1_w = tb_th * 18.0
-            col2_w = tb_th * 12.0
+            row_h = tb_th * 2.2
+            col1_w = tb_th * 28.0
+            col2_w = tb_th * 18.0
             tb_w = col1_w + col2_w
 
             # Отрисовка рамки таблицы
@@ -441,7 +442,7 @@ def export_cartogram_dxf(
 
                 if r_idx == 0:
                     # Заголовок по центру
-                    t = msp.add_text(col1, dxfattribs={"layer": "ТАБЛИЦА_БАЛАНСА", "height": tb_th * 1.05})
+                    t = msp.add_text(col1, dxfattribs={"layer": "ТАБЛИЦА_БАЛАНСА", "height": tb_th * 1.15})
                     t.set_placement((tb_x0 + tb_w * 0.5, cur_y - row_h * 0.5), align=TextEntityAlignment.MIDDLE_CENTER)
                 else:
                     # Разделитель колонок
@@ -449,10 +450,10 @@ def export_cartogram_dxf(
                                  dxfattribs={"layer": "ТАБЛИЦА_БАЛАНСА", "lineweight": 18})
                     # Текст колонки 1 (название)
                     t1 = msp.add_text(f" {col1}", dxfattribs={"layer": "ТАБЛИЦА_БАЛАНСА", "height": tb_th})
-                    t1.set_placement((tb_x0 + tb_th * 0.4, cur_y - row_h * 0.5), align=TextEntityAlignment.MIDDLE_LEFT)
+                    t1.set_placement((tb_x0 + tb_th * 0.6, cur_y - row_h * 0.5), align=TextEntityAlignment.MIDDLE_LEFT)
                     # Текст колонки 2 (значение)
                     t2 = msp.add_text(f"{col2} ", dxfattribs={"layer": "ТАБЛИЦА_БАЛАНСА", "height": tb_th})
-                    t2.set_placement((tb_x0 + tb_w - tb_th * 0.4, cur_y - row_h * 0.5), align=TextEntityAlignment.MIDDLE_RIGHT)
+                    t2.set_placement((tb_x0 + tb_w - tb_th * 0.6, cur_y - row_h * 0.5), align=TextEntityAlignment.MIDDLE_RIGHT)
 
                 cur_y -= row_h
 
@@ -462,3 +463,498 @@ def export_cartogram_dxf(
 
     except Exception as e:
         return False, f"Ошибка при формировании файла DXF: {e}"
+
+
+def export_surface_3d_dxf(
+    calc_results: Dict[str, Any],
+    points: List[Any],
+    boundary_indices: List[int],
+    output_path: str,
+    coord_swap: bool = True
+) -> Tuple[bool, str]:
+    """
+    Экспортирует 3D модель поверхности в формате AutoCAD DXF (3DFACE).
+    Для выемки (cut) экспортируется нижняя поверхность (дно).
+    Для насыпи (fill) экспортируется верхняя поверхность (насыпь).
+    Для планировки (grading) экспортируются обе поверхности на раздельных слоях.
+    """
+    if not EZDXF_AVAILABLE:
+        return False, "Библиотека ezdxf не установлена."
+
+    try:
+        doc = ezdxf.new("R2010")
+        doc.header["$DWGCODEPAGE"] = "ANSI_1251"
+        msp = doc.modelspace()
+
+        def to_cad(x_geo: float, y_geo: float) -> Tuple[float, float]:
+            if coord_swap:
+                return float(y_geo), float(x_geo)
+            return float(x_geo), float(y_geo)
+
+        # Контур границы
+        boundary = calc_results.get("boundary") if calc_results else None
+        if (boundary is None or len(boundary) < 3) and points and boundary_indices and len(boundary_indices) >= 3:
+            boundary = np.array([[points[i].x, points[i].y, points[i].h] for i in boundary_indices])
+
+        doc.layers.add("0_ГРАНИЦА_РАБОТ", color=1, lineweight=50)
+        if boundary is not None and len(boundary) >= 3:
+            cad_bound = [to_cad(pt[0], pt[1]) for pt in boundary[:, :2]]
+            msp.add_lwpolyline(cad_bound, close=True, dxfattribs={"layer": "0_ГРАНИЦА_РАБОТ", "lineweight": 50})
+
+        # Определение типа земляных работ
+        work_type = calc_results.get("work_type", "auto") if calc_results else "auto"
+        v_cut = calc_results.get("v_cut", 0.0) if calc_results else 0.0
+        v_fill = calc_results.get("v_fill", 0.0) if calc_results else 0.0
+        is_cut = (work_type == "cut" or (work_type in ("auto", "grading") and v_cut > v_fill))
+
+        # Для выемок - нижняя поверхность, для насыпей - верхняя
+        surf_name = "ДНО_ВЫЕМКА" if is_cut else "ВЕРХ_НАСЫПЬ"
+        surf_color = 1 if is_cut else 3
+        layer_surf = f"3D_ПОВЕРХНОСТЬ_{surf_name}"
+        doc.layers.add(layer_surf, color=surf_color)
+
+        # Получаем точки целевой поверхности
+        if is_cut:
+            surf_pts = calc_results.get("bottom_surface_pts")
+            if surf_pts is None or len(surf_pts) == 0:
+                surf_pts = np.array([[p.x, p.y, p.h] for p in points if getattr(p, "surface_type", None) == "bottom"])
+        else:
+            surf_pts = calc_results.get("top_surface_pts")
+            if surf_pts is None or len(surf_pts) == 0:
+                surf_pts = np.array([[p.x, p.y, p.h] for p in points if getattr(p, "surface_type", None) == "top"])
+
+        if surf_pts is None or len(surf_pts) == 0:
+            surf_pts = np.array([[p.x, p.y, p.h] for p in points])
+
+        # Триангуляция и построение 3DFACE
+        if len(surf_pts) >= 3:
+            from scipy.spatial import Delaunay
+            tri = Delaunay(surf_pts[:, :2])
+            for simplex in tri.simplices:
+                p1, p2, p3 = surf_pts[simplex[0]], surf_pts[simplex[1]], surf_pts[simplex[2]]
+                c1 = to_cad(p1[0], p1[1])
+                c2 = to_cad(p2[0], p2[1])
+                c3 = to_cad(p3[0], p3[1])
+                msp.add_3dface(
+                    [(c1[0], c1[1], float(p1[2])),
+                     (c2[0], c2[1], float(p2[2])),
+                     (c3[0], c3[1], float(p3[2])),
+                     (c3[0], c3[1], float(p3[2]))],
+                    dxfattribs={"layer": layer_surf}
+                )
+
+        # Точки съёмки
+        doc.layers.add("ТОЧКИ_СЪЕМКИ", color=7)
+        for p in points:
+            xc, yc = to_cad(p.x, p.y)
+            msp.add_point((xc, yc, float(p.h)), dxfattribs={"layer": "ТОЧКИ_СЪЕМКИ"})
+            t = msp.add_text(f"{p.id} ({p.h:.2f})", dxfattribs={"layer": "ТОЧКИ_СЪЕМКИ", "height": 0.5})
+            t.set_placement((xc + 0.3, yc + 0.3, float(p.h)), align=TextEntityAlignment.LEFT)
+
+        doc.saveas(output_path)
+        return True, f"3D модель ({surf_name}) успешно экспортирована в DXF:\n{output_path}"
+    except Exception as e:
+        return False, f"Ошибка при экспорте 3D модели в DXF: {e}"
+
+
+def export_tin_dxf(
+    calc_results: Dict[str, Any],
+    points: List[Any],
+    boundary_indices: List[int],
+    tin_simplices: Optional[Any],
+    output_path: str,
+    coord_swap: bool = True
+) -> Tuple[bool, str]:
+    """
+    Экспортирует TIN-триангуляцию в формат AutoCAD DXF:
+    3D грани (3DFACE), каркасные ребра (LINE) и отметки вершин.
+    Для выемки строится нижняя поверхность, для насыпи - верхняя.
+    """
+    if not EZDXF_AVAILABLE:
+        return False, "Библиотека ezdxf не установлена."
+
+    try:
+        doc = ezdxf.new("R2010")
+        doc.header["$DWGCODEPAGE"] = "ANSI_1251"
+        msp = doc.modelspace()
+
+        def to_cad(x_geo: float, y_geo: float) -> Tuple[float, float]:
+            if coord_swap:
+                return float(y_geo), float(x_geo)
+            return float(x_geo), float(y_geo)
+
+        work_type = calc_results.get("work_type", "auto") if calc_results else "auto"
+        v_cut = calc_results.get("v_cut", 0.0) if calc_results else 0.0
+        v_fill = calc_results.get("v_fill", 0.0) if calc_results else 0.0
+        is_cut = (work_type == "cut" or (work_type in ("auto", "grading") and v_cut > v_fill))
+        surf_label = "Дно (выемка)" if is_cut else "Верх (насыпь)"
+        color_face = 1 if is_cut else 3
+
+        doc.layers.add("0_ГРАНИЦА_РАБОТ", color=1, lineweight=50)
+        doc.layers.add("TIN_ГРАНИ_3D", color=color_face)
+        doc.layers.add("TIN_РЕБРА", color=8, lineweight=18)
+        doc.layers.add("TIN_ВЕРШИНЫ", color=4, lineweight=15)
+
+        # Контур границы
+        boundary = calc_results.get("boundary") if calc_results else None
+        if (boundary is None or len(boundary) < 3) and points and boundary_indices and len(boundary_indices) >= 3:
+            boundary = np.array([[points[i].x, points[i].y, points[i].h] for i in boundary_indices])
+
+        if boundary is not None and len(boundary) >= 3:
+            cad_bound = [to_cad(pt[0], pt[1]) for pt in boundary[:, :2]]
+            msp.add_lwpolyline(cad_bound, close=True, dxfattribs={"layer": "0_ГРАНИЦА_РАБОТ", "lineweight": 50})
+
+        # Получаем треугольники TIN с учетом целевой поверхности
+        if is_cut:
+            surf_pts = calc_results.get("bottom_surface_pts")
+            if surf_pts is None or len(surf_pts) == 0:
+                surf_pts = np.array([[p.x, p.y, p.h] for p in points if getattr(p, "surface_type", None) == "bottom"])
+        else:
+            surf_pts = calc_results.get("top_surface_pts")
+            if surf_pts is None or len(surf_pts) == 0:
+                surf_pts = np.array([[p.x, p.y, p.h] for p in points if getattr(p, "surface_type", None) == "top"])
+
+        if surf_pts is not None and len(surf_pts) >= 3:
+            pts_3d = surf_pts
+            from scipy.spatial import Delaunay
+            tri = Delaunay(pts_3d[:, :2])
+            simplices = tri.simplices
+        else:
+            simplices = tin_simplices if tin_simplices is not None else calc_results.get("active_simplices")
+            pts_3d = calc_results.get("pts_3d")
+            if pts_3d is None or len(pts_3d) == 0:
+                pts_3d = np.array([[p.x, p.y, p.h] for p in points])
+
+            if (simplices is None or len(simplices) == 0) and len(pts_3d) >= 3:
+                from scipy.spatial import Delaunay
+                tri = Delaunay(pts_3d[:, :2])
+                simplices = tri.simplices
+
+        if simplices is not None and len(simplices) > 0 and len(pts_3d) >= 3:
+            drawn_edges = set()
+            for s in simplices:
+                i1, i2, i3 = int(s[0]), int(s[1]), int(s[2])
+                if i1 >= len(pts_3d) or i2 >= len(pts_3d) or i3 >= len(pts_3d):
+                    continue
+                p1, p2, p3 = pts_3d[i1], pts_3d[i2], pts_3d[i3]
+                c1 = to_cad(p1[0], p1[1])
+                c2 = to_cad(p2[0], p2[1])
+                c3 = to_cad(p3[0], p3[1])
+                v1 = (c1[0], c1[1], float(p1[2]))
+                v2 = (c2[0], c2[1], float(p2[2]))
+                v3 = (c3[0], c3[1], float(p3[2]))
+
+                # 3DFACE
+                msp.add_3dface([v1, v2, v3, v3], dxfattribs={"layer": "TIN_ГРАНИ_3D"})
+
+                # Каркасные 3D ребра
+                for edge in [tuple(sorted([i1, i2])), tuple(sorted([i2, i3])), tuple(sorted([i3, i1]))]:
+                    if edge not in drawn_edges:
+                        drawn_edges.add(edge)
+                        ea = pts_3d[edge[0]]
+                        eb = pts_3d[edge[1]]
+                        eca = to_cad(ea[0], ea[1])
+                        ecb = to_cad(eb[0], eb[1])
+                        msp.add_line((eca[0], eca[1], float(ea[2])),
+                                     (ecb[0], ecb[1], float(eb[2])),
+                                     dxfattribs={"layer": "TIN_РЕБРА"})
+
+        # Вершины TIN
+        for idx, p in enumerate(points):
+            xc, yc = to_cad(p.x, p.y)
+            msp.add_point((xc, yc, float(p.h)), dxfattribs={"layer": "TIN_ВЕРШИНЫ"})
+            t = msp.add_text(f"#{idx+1} {p.id} ({p.h:.2f})", dxfattribs={"layer": "TIN_ВЕРШИНЫ", "height": 0.45})
+            t.set_placement((xc + 0.25, yc + 0.25, float(p.h)), align=TextEntityAlignment.LEFT)
+
+        doc.saveas(output_path)
+        return True, f"TIN-триангуляция ({surf_label}) успешно экспортирована в DXF:\n{output_path}"
+    except Exception as e:
+        return False, f"Ошибка при экспорте TIN в DXF: {e}"
+
+
+def export_contours_dxf(
+    calc_results: Dict[str, Any],
+    points: List[Any],
+    boundary_indices: List[int],
+    output_path: str,
+    contour_step: Optional[float] = None,
+    coord_swap: bool = True
+) -> Tuple[bool, str]:
+    """
+    Экспортирует топографические горизонтали (изолинии) в формат AutoCAD DXF.
+    Для выемки строятся горизонтали нижней поверхности, для насыпи - верхней.
+    """
+    if not EZDXF_AVAILABLE:
+        return False, "Библиотека ezdxf не установлена."
+
+    try:
+        doc = ezdxf.new("R2010")
+        doc.header["$DWGCODEPAGE"] = "ANSI_1251"
+        msp = doc.modelspace()
+
+        def to_cad(x_geo: float, y_geo: float) -> Tuple[float, float]:
+            if coord_swap:
+                return float(y_geo), float(x_geo)
+            return float(x_geo), float(y_geo)
+
+        work_type = calc_results.get("work_type", "auto") if calc_results else "auto"
+        v_cut = calc_results.get("v_cut", 0.0) if calc_results else 0.0
+        v_fill = calc_results.get("v_fill", 0.0) if calc_results else 0.0
+        is_cut = (work_type == "cut" or (work_type in ("auto", "grading") and v_cut > v_fill))
+        surf_label = "нижняя поверхность (выемка)" if is_cut else "верхняя поверхность (насыпь)"
+
+        doc.layers.add("0_ГРАНИЦА_РАБОТ", color=1, lineweight=50)
+        doc.layers.add("ГОРИЗОНТАЛИ_ОСНОВНЫЕ", color=8, lineweight=25)
+        doc.layers.add("ГОРИЗОНТАЛИ_УТОЛЩЕННЫЕ", color=30, lineweight=50)
+        doc.layers.add("ОТМЕТКИ_ГОРИЗОНТАЛЕЙ", color=7, lineweight=15)
+
+        # Контур границы
+        boundary = calc_results.get("boundary") if calc_results else None
+        if (boundary is None or len(boundary) < 3) and points and boundary_indices and len(boundary_indices) >= 3:
+            boundary = np.array([[points[i].x, points[i].y, points[i].h] for i in boundary_indices])
+
+        if boundary is not None and len(boundary) >= 3:
+            cad_bound = [to_cad(pt[0], pt[1]) for pt in boundary[:, :2]]
+            msp.add_lwpolyline(cad_bound, close=True, dxfattribs={"layer": "0_ГРАНИЦА_РАБОТ", "lineweight": 50})
+
+        # Целевая поверхность: нижняя для выемки, верхняя для насыпи
+        gx = calc_results.get("grid_x")
+        gy = calc_results.get("grid_y")
+        z_grid = calc_results.get("z_bot_grid") if is_cut else calc_results.get("z_top_grid")
+
+        # Fallback интерполяция при отсутствии сетки
+        if gx is None or gy is None or z_grid is None:
+            if is_cut:
+                surf_pts = calc_results.get("bottom_surface_pts")
+                if surf_pts is None or len(surf_pts) == 0:
+                    surf_pts = np.array([[p.x, p.y, p.h] for p in points if getattr(p, "surface_type", None) == "bottom"])
+            else:
+                surf_pts = calc_results.get("top_surface_pts")
+                if surf_pts is None or len(surf_pts) == 0:
+                    surf_pts = np.array([[p.x, p.y, p.h] for p in points if getattr(p, "surface_type", None) == "top"])
+
+            if surf_pts is None or len(surf_pts) < 3:
+                surf_pts = np.array([[p.x, p.y, p.h] for p in points])
+
+            if len(surf_pts) >= 3:
+                from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
+                x_min, x_max = float(np.min(surf_pts[:, 0])), float(np.max(surf_pts[:, 0]))
+                y_min, y_max = float(np.min(surf_pts[:, 1])), float(np.max(surf_pts[:, 1]))
+                gx = np.linspace(x_min, x_max, 100)
+                gy = np.linspace(y_min, y_max, 100)
+                gx_m, gy_m = np.meshgrid(gx, gy)
+                lin = LinearNDInterpolator(surf_pts[:, :2], surf_pts[:, 2])
+                near = NearestNDInterpolator(surf_pts[:, :2], surf_pts[:, 2])
+                z_grid = lin(gx_m, gy_m)
+                mask_nan = np.isnan(z_grid)
+                if np.any(mask_nan):
+                    z_grid[mask_nan] = near(gx_m[mask_nan], gy_m[mask_nan])
+
+        if z_grid is not None and gx is not None and gy is not None:
+            z_valid = z_grid[~np.isnan(z_grid)]
+            if len(z_valid) > 0:
+                z_min = float(np.min(z_valid))
+                z_max = float(np.max(z_valid))
+                delta_z = max(z_max - z_min, 0.01)
+
+                c_step = contour_step
+                if c_step is None or c_step <= 0:
+                    if delta_z <= 0.6:
+                        c_step = 0.05
+                    elif delta_z <= 1.5:
+                        c_step = 0.1
+                    elif delta_z <= 4.0:
+                        c_step = 0.25
+                    elif delta_z <= 10.0:
+                        c_step = 0.5
+                    elif delta_z <= 25.0:
+                        c_step = 1.0
+                    else:
+                        c_step = 2.0
+
+                start_level = math.floor(z_min / c_step) * c_step
+                levels = np.arange(start_level, z_max + c_step * 0.5, c_step)
+
+                # Генерация горизонталей через Matplotlib
+                from matplotlib.figure import Figure
+                fig = Figure()
+                ax = fig.add_subplot(111)
+                if gx.ndim == 1:
+                    X_m, Y_m = np.meshgrid(gx, gy)
+                else:
+                    X_m, Y_m = gx, gy
+
+                cs = ax.contour(X_m, Y_m, z_grid, levels=levels)
+
+                for lvl_idx, level in enumerate(cs.levels):
+                    is_index = (abs(round(level / (c_step * 5)) * (c_step * 5) - level) < 1e-4)
+                    layer_name = "ГОРИЗОНТАЛИ_УТОЛЩЕННЫЕ" if is_index else "ГОРИЗОНТАЛИ_ОСНОВНЫЕ"
+                    lw = 50 if is_index else 25
+
+                    segs = cs.allsegs[lvl_idx] if hasattr(cs, "allsegs") else []
+                    for seg in segs:
+                        if len(seg) < 2:
+                            continue
+                        cad_pts = [to_cad(pt[0], pt[1]) for pt in seg]
+                        msp.add_lwpolyline(cad_pts, dxfattribs={"layer": layer_name, "elevation": float(level), "lineweight": lw})
+
+                        # Подпись отметки горизонтали около середины
+                        mid_idx = len(cad_pts) // 2
+                        mx, my = cad_pts[mid_idx]
+                        t = msp.add_text(f"{level:.2f}", dxfattribs={"layer": "ОТМЕТКИ_ГОРИЗОНТАЛЕЙ", "height": 0.40})
+                        t.set_placement((mx + 0.15, my + 0.15, float(level)), align=TextEntityAlignment.LEFT)
+
+        doc.saveas(output_path)
+        return True, f"Горизонтали ({surf_label}) успешно экспортированы в DXF:\n{output_path}"
+    except Exception as e:
+        return False, f"Ошибка при экспорте горизонталей в DXF: {e}"
+
+
+def export_diff_dxf(
+    calc_results: Dict[str, Any],
+    points: List[Any],
+    boundary_indices: List[int],
+    output_path: str,
+    coord_swap: bool = True
+) -> Tuple[bool, str]:
+    """
+    Экспортирует карту перепада высот (разницы поверхностей) в DXF.
+    Включает границу работ, нулевую линию баланса, сетку перепада и отметки.
+    """
+    if not EZDXF_AVAILABLE:
+        return False, "Библиотека ezdxf не установлена."
+
+    try:
+        doc = ezdxf.new("R2010")
+        doc.header["$DWGCODEPAGE"] = "ANSI_1251"
+        msp = doc.modelspace()
+
+        def to_cad(x_geo: float, y_geo: float) -> Tuple[float, float]:
+            if coord_swap:
+                return float(y_geo), float(x_geo)
+            return float(x_geo), float(y_geo)
+
+        doc.layers.add("0_ГРАНИЦА_РАБОТ", color=1, lineweight=50)
+        doc.layers.add("0_НУЛЕВАЯ_ЛИНИЯ", color=4, lineweight=35, linetype="DASHED")
+        doc.layers.add("ПЕРЕПАД_ВЫСОТ_НАСЫПЬ", color=3)
+        doc.layers.add("ПЕРЕПАД_ВЫСОТ_ВЫЕМКА", color=1)
+        doc.layers.add("ОТМЕТКИ_РАБОЧИЕ", color=30, lineweight=15)
+
+        # Контур границы
+        boundary = calc_results.get("boundary") if calc_results else None
+        if (boundary is None or len(boundary) < 3) and points and boundary_indices and len(boundary_indices) >= 3:
+            boundary = np.array([[points[i].x, points[i].y, points[i].h] for i in boundary_indices])
+
+        if boundary is not None and len(boundary) >= 3:
+            cad_bound = [to_cad(pt[0], pt[1]) for pt in boundary[:, :2]]
+            msp.add_lwpolyline(cad_bound, close=True, dxfattribs={"layer": "0_ГРАНИЦА_РАБОТ", "lineweight": 50})
+
+        # Сетка разности
+        gx = calc_results.get("grid_x")
+        gy = calc_results.get("grid_y")
+        zt = calc_results.get("z_top_grid")
+        zb = calc_results.get("z_bot_grid")
+
+        if gx is not None and gy is not None and zt is not None and zb is not None:
+            dh_grid = zt - zb
+            if gx.ndim == 1:
+                X_m, Y_m = np.meshgrid(gx, gy)
+            else:
+                X_m, Y_m = gx, gy
+
+            # Нулевая линия баланса
+            from matplotlib.figure import Figure
+            fig = Figure()
+            ax = fig.add_subplot(111)
+            cs = ax.contour(X_m, Y_m, dh_grid, levels=[0.0])
+            for segs in cs.allsegs:
+                for seg in segs:
+                    if len(seg) >= 2:
+                        cad_pts = [to_cad(pt[0], pt[1]) for pt in seg]
+                        msp.add_lwpolyline(cad_pts, dxfattribs={"layer": "0_НУЛЕВАЯ_ЛИНИЯ", "linetype": "DASHED", "lineweight": 35})
+
+            # Подписи разницы высот в узлах
+            step_stride = max(1, len(gx) // 30)
+            for r in range(0, dh_grid.shape[0], step_stride):
+                for c in range(0, dh_grid.shape[1], step_stride):
+                    dh = float(dh_grid[r, c])
+                    if not np.isnan(dh):
+                        px = float(X_m[r, c])
+                        py = float(Y_m[r, c])
+                        xc, yc = to_cad(px, py)
+                        sign_s = "+" if dh > 0.005 else ("-" if dh < -0.005 else "")
+                        layer = "ПЕРЕПАД_ВЫСОТ_НАСЫПЬ" if dh >= 0 else "ПЕРЕПАД_ВЫСОТ_ВЫЕМКА"
+                        t = msp.add_text(f"{sign_s}{abs(dh):.2f}", dxfattribs={"layer": layer, "height": 0.4})
+                        t.set_placement((xc + 0.1, yc + 0.1, dh), align=TextEntityAlignment.LEFT)
+
+        doc.saveas(output_path)
+        return True, f"Карта перепада высот успешно экспортирована в DXF:\n{output_path}"
+    except Exception as e:
+        return False, f"Ошибка при экспорте перепада высот в DXF: {e}"
+
+
+def export_plan_2d_dxf(
+    calc_results: Dict[str, Any],
+    points: List[Any],
+    boundary_indices: List[int],
+    output_path: str,
+    coord_swap: bool = True
+) -> Tuple[bool, str]:
+    """
+    Экспортирует 2D план съёмки и контур границы в формат AutoCAD DXF.
+    Для выемки экспортируются точки и контур нижней поверхности, для насыпи - верхней.
+    """
+    if not EZDXF_AVAILABLE:
+        return False, "Библиотека ezdxf не установлена."
+
+    try:
+        doc = ezdxf.new("R2010")
+        doc.header["$DWGCODEPAGE"] = "ANSI_1251"
+        msp = doc.modelspace()
+
+        def to_cad(x_geo: float, y_geo: float) -> Tuple[float, float]:
+            if coord_swap:
+                return float(y_geo), float(x_geo)
+            return float(x_geo), float(y_geo)
+
+        work_type = calc_results.get("work_type", "auto") if calc_results else "auto"
+        v_cut = calc_results.get("v_cut", 0.0) if calc_results else 0.0
+        v_fill = calc_results.get("v_fill", 0.0) if calc_results else 0.0
+        is_cut = (work_type == "cut" or (work_type in ("auto", "grading") and v_cut > v_fill))
+        surf_label = "2D План (выемка / нижняя поверхность)" if is_cut else "2D План (насыпь / верхняя поверхность)"
+
+        doc.layers.add("0_ГРАНИЦА_РАБОТ", color=1, lineweight=50)
+        doc.layers.add("ТОЧКИ_СЪЕМКИ", color=3 if not is_cut else 1, lineweight=20)
+        doc.layers.add("ПОДПИСИ_ТОЧЕК", color=7, lineweight=15)
+
+        # Контур границы
+        boundary = calc_results.get("boundary") if calc_results else None
+        if (boundary is None or len(boundary) < 3) and points and boundary_indices and len(boundary_indices) >= 3:
+            boundary = np.array([[points[i].x, points[i].y, points[i].h] for i in boundary_indices])
+
+        if boundary is not None and len(boundary) >= 3:
+            cad_bound = [to_cad(pt[0], pt[1]) for pt in boundary[:, :2]]
+            msp.add_lwpolyline(cad_bound, close=True, dxfattribs={"layer": "0_ГРАНИЦА_РАБОТ", "lineweight": 50})
+
+        # Фильтрация точек: для выемки - нижняя поверхность, для насыпи - верхняя
+        target_pts = []
+        target_surf = "bottom" if is_cut else "top"
+        for p in points:
+            st = getattr(p, "surface_type", None)
+            if st == target_surf or st is None:
+                target_pts.append(p)
+
+        if not target_pts:
+            target_pts = points
+
+        for idx, p in enumerate(target_pts):
+            xc, yc = to_cad(p.x, p.y)
+            msp.add_point((xc, yc, float(p.h)), dxfattribs={"layer": "ТОЧКИ_СЪЕМКИ"})
+            pid_str = f"#{idx+1}" if not getattr(p, "id", None) else str(p.id)
+            t = msp.add_text(f"{pid_str} ({p.h:.2f})", dxfattribs={"layer": "ПОДПИСИ_ТОЧЕК", "height": 0.45})
+            t.set_placement((xc + 0.25, yc + 0.25, float(p.h)), align=TextEntityAlignment.LEFT)
+
+        doc.saveas(output_path)
+        return True, f"2D план ({surf_label}) успешно экспортирован в DXF:\n{output_path}"
+    except Exception as e:
+        return False, f"Ошибка при экспорте 2D плана в DXF: {e}"

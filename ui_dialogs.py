@@ -1209,7 +1209,7 @@ class CartogramDxfExportDialog(tk.Toplevel):
             proj_dir = get_projects_dir()
         self._default_dir = proj_dir
 
-        self.geometry("540x580")
+        self.geometry("680x600")
         self._init_ui()
 
     def _init_ui(self):
@@ -1470,7 +1470,7 @@ class DxfImportDialog(tk.Toplevel):
             return
 
         self.dxf_data = res
-        self.geometry("640x620")
+        self.geometry("680x620")
         self._init_ui()
 
     def _init_ui(self):

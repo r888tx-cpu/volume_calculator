@@ -601,11 +601,6 @@ class VolumeApp(_AppBase):
         b_imp.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
         add_tooltip(b_imp, "Импортировать новый файл координат (TXT, CSV, DAT, XYZ, PTS, DXF) в проект")
 
-        b_dxf = ctk.CTkButton(btn_box1, text="📥 DXF...", width=0, height=24,
-                              command=self._open_dxf_import_dialog)
-        b_dxf.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
-        add_tooltip(b_dxf, "Импортировать чертеж AutoCAD DXF с выбором слоев съёмки и контура границы")
-
         b_sep = ctk.CTkButton(btn_box1, text="Верх / Низ...", width=0, height=24,
                               command=self._open_separate_files_dialog)
         b_sep.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
@@ -728,7 +723,7 @@ class VolumeApp(_AppBase):
             text="📐 Экспорт чертежа в DXF",
             height=26,
             font=ctk.CTkFont(size=11),
-            command=self._open_dxf_export_dialog
+            command=lambda: self._export_tab_dxf()
         )
         self.btn_export_dxf.pack(fill=tk.X, padx=6, pady=(0, 4))
 
@@ -847,25 +842,27 @@ class VolumeApp(_AppBase):
 
         tb_bg = "#212529" if is_dark else "#f8f9fa"
         tb_fg = "#ffffff" if is_dark else "#212529"
-        save_icon = self._get_themed_toolbar_icon("save", is_dark)
-        report_icon = self._get_themed_toolbar_icon("report", is_dark)
+        btn_bg = "#2b3035" if is_dark else "#ffffff"
+        btn_fg = "#f8f9fa" if is_dark else "#212529"
+        btn_active = "#3d444b" if is_dark else "#e9ecef"
+        btn_highlight = "#495057" if is_dark else "#ced4da"
+
         for tb in getattr(self, "_toolbars", []):
             try:
                 tb.config(bg=tb_bg)
                 if hasattr(tb, "_message_label"):
                     tb._message_label.config(bg=tb_bg, fg=tb_fg)
-                if "Save" in getattr(tb, "_buttons", {}):
-                    s_btn = tb._buttons["Save"]
-                    if save_icon:
-                        s_btn.config(image=save_icon, bg=tb_bg, activebackground=tb_bg)
-                    else:
-                        s_btn.config(bg=tb_bg, activebackground=tb_bg)
-                if hasattr(tb, "_btn_report"):
-                    r_btn = tb._btn_report
-                    if report_icon:
-                        r_btn.config(image=report_icon, bg=tb_bg, activebackground=tb_bg)
-                    else:
-                        r_btn.config(bg=tb_bg, activebackground=tb_bg, fg=tb_fg)
+                for btn_attr in ("_btn_save_png", "_btn_dxf", "_btn_report"):
+                    b = getattr(tb, btn_attr, None)
+                    if b is not None:
+                        b.config(
+                            bg=btn_bg,
+                            fg=btn_fg,
+                            activebackground=btn_active,
+                            activeforeground=btn_fg,
+                            highlightbackground=btn_highlight,
+                            highlightcolor=btn_highlight
+                        )
             except Exception:
                 pass
 
@@ -6953,10 +6950,14 @@ class VolumeApp(_AppBase):
         return None
 
     def _setup_custom_toolbar_buttons(self, toolbar, fig, tab_name: str):
-        """Настраивает кнопку сохранения графика и добавляет рядом кнопку отчета"""
+        """Настраивает аккуратные кнопки у левого края панели холста: PNG, DXF, Отчет"""
         is_dark = ctk.get_appearance_mode() == "Dark"
         tb_bg = "#212529" if is_dark else "#f8f9fa"
         tb_fg = "#ffffff" if is_dark else "#212529"
+        btn_bg = "#2b3035" if is_dark else "#ffffff"
+        btn_fg = "#f8f9fa" if is_dark else "#212529"
+        btn_active = "#3d444b" if is_dark else "#e9ecef"
+        btn_highlight = "#495057" if is_dark else "#ced4da"
 
         try:
             toolbar.config(bg=tb_bg, bd=0, highlightthickness=0)
@@ -6964,55 +6965,81 @@ class VolumeApp(_AppBase):
             pass
 
         toolbar.save_figure = lambda *args: self._save_tab_image(fig, tab_name)
-        if "Save" in getattr(toolbar, "_buttons", {}):
-            save_btn = toolbar._buttons["Save"]
-            save_icon = self._get_themed_toolbar_icon("save", is_dark)
-            if save_icon:
-                save_btn.config(image=save_icon, command=toolbar.save_figure, bg=tb_bg, activebackground=tb_bg)
-            else:
-                save_btn.config(command=toolbar.save_figure, bg=tb_bg, activebackground=tb_bg)
-            save_btn.pack_configure(padx=(28, 2), pady=1)
-            add_tooltip(save_btn, f"Сохранить изображение текущей вкладки '{tab_name}' в формате PNG")
 
-        btn_report = tk.Button(
+        # Скрываем стандартную системную кнопку сохранения Matplotlib
+        if "Save" in getattr(toolbar, "_buttons", {}):
+            try:
+                toolbar._buttons["Save"].pack_forget()
+            except Exception:
+                pass
+
+        btn_save_png = tk.Button(
             master=toolbar,
-            relief="flat",
-            overrelief="groove",
+            text="💾 Сохранить PNG",
+            relief="solid",
             borderwidth=1,
-            bg=tb_bg,
-            activebackground=tb_bg,
-            command=self._save_report_to_project,
+            bg=btn_bg,
+            fg=btn_fg,
+            activebackground=btn_active,
+            activeforeground=btn_fg,
+            highlightbackground=btn_highlight,
+            highlightcolor=btn_highlight,
+            highlightthickness=1,
+            font=("Segoe UI", 8, "bold"),
+            padx=8,
+            pady=2,
+            cursor="hand2",
+            command=lambda: self._save_tab_image(fig, tab_name)
         )
-        report_icon = self._get_themed_toolbar_icon("report", is_dark)
-        if report_icon:
-            btn_report.config(image=report_icon)
-        else:
-            btn_report.config(text="TXT", font=("Segoe UI", 8, "bold"), fg=tb_fg)
-
-        toolbar._btn_report = btn_report
-
-        if "Save" in getattr(toolbar, "_buttons", {}):
-            btn_report.pack(side=tk.LEFT, after=toolbar._buttons["Save"], padx=(2, 0), pady=1)
-        else:
-            btn_report.pack(side=tk.LEFT, padx=(28, 0), pady=1)
-
-        add_tooltip(btn_report, "Сохранить подробный текстовый отчет расчета объема (TXT) в папку проекта")
+        toolbar._btn_save_png = btn_save_png
+        btn_save_png.pack(side=tk.LEFT, padx=(6, 2), pady=2)
+        add_tooltip(btn_save_png, f"Сохранить графическое изображение текущей вкладки '{tab_name}' в формате PNG")
 
         btn_dxf = tk.Button(
             master=toolbar,
-            relief="flat",
-            overrelief="groove",
+            text="📐 Экспорт DXF",
+            relief="solid",
             borderwidth=1,
-            bg=tb_bg,
-            activebackground=tb_bg,
-            command=self._open_dxf_export_dialog,
+            bg=btn_bg,
+            fg=btn_fg,
+            activebackground=btn_active,
+            activeforeground=btn_fg,
+            highlightbackground=btn_highlight,
+            highlightcolor=btn_highlight,
+            highlightthickness=1,
+            font=("Segoe UI", 8, "bold"),
+            padx=8,
+            pady=2,
+            cursor="hand2",
+            command=lambda tn=tab_name: self._export_tab_dxf(tn)
         )
-        btn_dxf.config(text="DXF", font=("Segoe UI", 8, "bold"), fg=tb_fg)
         toolbar._btn_dxf = btn_dxf
-        btn_dxf.pack(side=tk.LEFT, after=btn_report, padx=(2, 0), pady=1)
-        add_tooltip(btn_dxf, "Экспортировать чертеж картограммы земляных масс в формат AutoCAD DXF (ГОСТ 21.508-2020)")
+        btn_dxf.pack(side=tk.LEFT, padx=2, pady=2)
+        add_tooltip(btn_dxf, f"Экспортировать чертеж текущей вкладки '{tab_name}' в формат AutoCAD DXF")
 
-        # 3. Центральная строка с объемами насыпи и выемки при открытых во весь экран вкладках
+        btn_report = tk.Button(
+            master=toolbar,
+            text="📄 Текстовый отчет",
+            relief="solid",
+            borderwidth=1,
+            bg=btn_bg,
+            fg=btn_fg,
+            activebackground=btn_active,
+            activeforeground=btn_fg,
+            highlightbackground=btn_highlight,
+            highlightcolor=btn_highlight,
+            highlightthickness=1,
+            font=("Segoe UI", 8, "bold"),
+            padx=8,
+            pady=2,
+            cursor="hand2",
+            command=self._save_report_to_project
+        )
+        toolbar._btn_report = btn_report
+        btn_report.pack(side=tk.LEFT, padx=(2, 6), pady=2)
+        add_tooltip(btn_report, "Сохранить подробный текстовый отчет расчета объема (TXT) в папку проекта")
+
+        # Центральная строка с объемами насыпи и выемки
         lbl_vol = tk.Label(
             master=toolbar,
             text="",
@@ -7044,6 +7071,95 @@ class VolumeApp(_AppBase):
             CartogramDxfExportDialog(self)
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось открыть диалог экспорта DXF:\n{e}", parent=self)
+
+    def _export_tab_dxf(self, tab_name: Optional[str] = None):
+        """Экспортирует чертеж активной графической вкладки в формат AutoCAD DXF."""
+        if not self.calc_results or "error" in self.calc_results:
+            messagebox.showwarning("Внимание", "Сначала выполните расчёт объема земляных масс.", parent=self)
+            return
+
+        if not tab_name:
+            tab_name = self.tabview.get() if hasattr(self, "tabview") else ""
+
+        # Для картограммы масс открываем подробный диалог настройки картограммы
+        if tab_name == self.TAB_DIFF:
+            self._open_dxf_export_dialog()
+            return
+
+        proj_dir = self._current_project_dir if self._current_project_dir else get_projects_dir()
+        try:
+            os.makedirs(proj_dir, exist_ok=True)
+        except Exception:
+            pass
+        folder_name = os.path.basename(proj_dir) if self._current_project_dir else "Проект"
+        base_name = self._strip_date_from_folder_name(folder_name) or folder_name
+
+        if tab_name == self.TAB_2D:
+            clean_name = "2D_План"
+            title = "2D плана съёмки"
+        elif tab_name == self.TAB_3D:
+            clean_name = "3D_Модель"
+            title = "3D модели поверхности"
+        elif tab_name == self.TAB_TIN:
+            clean_name = "TIN_Триангуляция"
+            title = "TIN-триангуляции"
+        elif tab_name == getattr(self, "TAB_CONTOURS", "Горизонтали"):
+            clean_name = "Горизонтали"
+            title = "топографических горизонталей"
+        else:
+            self._open_dxf_export_dialog()
+            return
+
+        default_fn = f"{base_name}_{clean_name}.dxf"
+        out_path = filedialog.asksaveasfilename(
+            parent=self,
+            title=f"Экспорт {title} в DXF",
+            initialdir=proj_dir,
+            initialfile=default_fn,
+            defaultextension=".dxf",
+            filetypes=[("AutoCAD DXF", "*.dxf"), ("Все файлы", "*.*")]
+        )
+        if not out_path:
+            return
+
+        try:
+            from dxf_exporter import (
+                export_surface_3d_dxf,
+                export_tin_dxf,
+                export_contours_dxf,
+                export_plan_2d_dxf
+            )
+            if tab_name == self.TAB_TIN:
+                tin_simps = getattr(self, "tin_simplices", None)
+                ok, msg = export_tin_dxf(
+                    self.calc_results, self.points, self.boundary_indices,
+                    tin_simps, out_path, coord_swap=True
+                )
+            elif tab_name == getattr(self, "TAB_CONTOURS", "Горизонтали"):
+                c_step = getattr(self, "contour_step", None)
+                ok, msg = export_contours_dxf(
+                    self.calc_results, self.points, self.boundary_indices,
+                    out_path, contour_step=c_step, coord_swap=True
+                )
+            elif tab_name == self.TAB_3D:
+                ok, msg = export_surface_3d_dxf(
+                    self.calc_results, self.points, self.boundary_indices,
+                    out_path, coord_swap=True
+                )
+            elif tab_name == self.TAB_2D:
+                ok, msg = export_plan_2d_dxf(
+                    self.calc_results, self.points, self.boundary_indices,
+                    out_path, coord_swap=True
+                )
+            else:
+                ok, msg = False, "Неизвестный тип вкладки"
+
+            if ok:
+                messagebox.showinfo("Успешно", msg, parent=self)
+            else:
+                messagebox.showerror("Ошибка экспорта", msg, parent=self)
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Произошла ошибка при экспорте в DXF:\n{e}", parent=self)
 
     def _export_report(self):
         self._save_report_to_project()

@@ -156,3 +156,82 @@ def test_dxf_export_graceful_failures():
     ok, msg = export_cartogram_dxf({}, [], [], "test.dxf")
     assert ok is False
     assert "Отсутствуют результаты" in msg
+
+
+def test_dxf_export_all_tabs():
+    from dxf_exporter import (
+        export_surface_3d_dxf,
+        export_tin_dxf,
+        export_contours_dxf,
+        export_diff_dxf,
+        export_plan_2d_dxf,
+    )
+
+    top_pts = np.array([
+        [0.0, 0.0, 105.0],
+        [20.0, 0.0, 105.0],
+        [20.0, 20.0, 105.0],
+        [0.0, 20.0, 105.0],
+        [10.0, 10.0, 106.0]
+    ])
+    bot_pts = np.array([
+        [0.0, 0.0, 100.0],
+        [20.0, 0.0, 100.0],
+        [20.0, 20.0, 100.0],
+        [0.0, 20.0, 100.0],
+        [10.0, 10.0, 100.0]
+    ])
+    boundary = np.array([
+        [0.0, 0.0, 100.0],
+        [20.0, 0.0, 100.0],
+        [20.0, 20.0, 100.0],
+        [0.0, 20.0, 100.0]
+    ])
+
+    calc = VolumeCalculator(top_pts, bot_pts, boundary_points=boundary, grid_resolution=0.5, work_type="cut")
+    res = calc.calculate()
+    geo_pts = [
+        GeoPoint(id="P1", x=0.0, y=0.0, h=100.0, surface_type="bottom"),
+        GeoPoint(id="P2", x=20.0, y=0.0, h=100.0, surface_type="bottom"),
+        GeoPoint(id="P3", x=20.0, y=20.0, h=100.0, surface_type="bottom"),
+        GeoPoint(id="P4", x=0.0, y=20.0, h=100.0, surface_type="bottom"),
+        GeoPoint(id="P5", x=10.0, y=10.0, h=100.0, surface_type="bottom"),
+    ]
+
+    with tempfile.TemporaryDirectory() as td:
+        # 1. 2D Plan
+        p_plan = os.path.join(td, "plan.dxf")
+        ok, msg = export_plan_2d_dxf(res, geo_pts, [0, 1, 2, 3], p_plan)
+        assert ok is True
+        doc = ezdxf.readfile(p_plan)
+        assert len(list(doc.modelspace().query("POINT"))) > 0
+
+        # 2. 3D Model
+        p_3d = os.path.join(td, "3d.dxf")
+        ok, msg = export_surface_3d_dxf(res, geo_pts, [0, 1, 2, 3], p_3d)
+        assert ok is True
+        doc = ezdxf.readfile(p_3d)
+        assert len(list(doc.modelspace().query("3DFACE"))) > 0
+
+        # 3. TIN
+        p_tin = os.path.join(td, "tin.dxf")
+        ok, msg = export_tin_dxf(res, geo_pts, [0, 1, 2, 3], None, p_tin)
+        assert ok is True
+        doc = ezdxf.readfile(p_tin)
+        assert len(list(doc.modelspace().query("3DFACE"))) > 0
+        assert len(list(doc.modelspace().query("LINE"))) > 0
+
+        # 4. Contours
+        p_cnt = os.path.join(td, "contours.dxf")
+        ok, msg = export_contours_dxf(res, geo_pts, [0, 1, 2, 3], p_cnt, contour_step=0.5)
+        assert ok is True
+        doc = ezdxf.readfile(p_cnt)
+        assert len(list(doc.modelspace().query("LWPOLYLINE"))) > 0
+
+        # 5. Diff
+        p_diff = os.path.join(td, "diff.dxf")
+        ok, msg = export_diff_dxf(res, geo_pts, [0, 1, 2, 3], p_diff)
+        assert ok is True
+        doc = ezdxf.readfile(p_diff)
+        assert len(list(doc.modelspace().query("TEXT"))) > 0
+
