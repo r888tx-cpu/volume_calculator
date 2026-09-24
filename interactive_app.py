@@ -567,29 +567,9 @@ class VolumeApp(_AppBase):
         # === 1. Проекты и файлы координат ===
         grp_load = _group(inner, " 1. Проекты и файлы координат ")
 
-        # Сохраненные проекты (выпадающий список по папкам Projects)
-        app_folder_name = os.path.basename(os.path.normpath(get_app_dir())) or "GeoVolumePro"
-        ctk.CTkLabel(grp_load, text=f"Выбор проекта ({app_folder_name}/Projects):", anchor="w", height=16).pack(fill=tk.X)
-        self.cbo_projects = ctk.CTkComboBox(grp_load, values=[], height=26,
-                                             command=self._on_cbo_project_selected)
-        self.cbo_projects.pack(fill=tk.X, pady=(1, 2))
-        add_tooltip(self.cbo_projects, f"Выбор сохраненного проекта из папки {app_folder_name}/Projects")
-
-        btn_box2 = ctk.CTkFrame(grp_load, fg_color="transparent")
-        btn_box2.pack(fill=tk.X, pady=(0, 2))
-        b_folder = ctk.CTkButton(btn_box2, text="📁 Открыть папку", width=0, height=24,
-                                 command=self._open_project_folder)
-        b_folder.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
-        add_tooltip(b_folder, "Открыть папку текущего проекта в Проводнике Windows")
-
-        b_del = ctk.CTkButton(btn_box2, text="Удалить проект", width=0, height=24,
-                              fg_color="#8B2020", hover_color="#A02828",
-                              command=self._delete_selected_project)
-        b_del.pack(side=tk.RIGHT, padx=(2, 0))
-        add_tooltip(b_del, "Удалить выбранный проект и связанные данные")
-
         self.cbo_files = None
 
+        # Кнопки импорта файла и раздельных съемок
         btn_box1 = ctk.CTkFrame(grp_load, fg_color="transparent")
         btn_box1.pack(fill=tk.X, pady=(0, 2))
         b_imp = ctk.CTkButton(btn_box1, text="Импорт файла...", width=0, height=24,
@@ -607,12 +587,35 @@ class VolumeApp(_AppBase):
         b_ref.pack(side=tk.RIGHT)
         add_tooltip(b_ref, "Обновить список проектов и файлов на диске")
 
+        # Кнопка настройки осей и колонок
         btn_box_remap = ctk.CTkFrame(grp_load, fg_color="transparent")
-        btn_box_remap.pack(fill=tk.X, pady=(0, 1))
+        btn_box_remap.pack(fill=tk.X, pady=(0, 2))
         b_remap = ctk.CTkButton(btn_box_remap, text="🔀 Настройка осей и колонок (X, Y, Z)...", width=0, height=24,
                                 command=self._open_remap_dialog)
         b_remap.pack(fill=tk.X)
         add_tooltip(b_remap, "Настроить соответствие колонок файла: X (Север), Y (Восток), Z (Высота), Разделитель")
+
+        # Выбор сохраненного проекта (через полстроки по высоте)
+        app_folder_name = os.path.basename(os.path.normpath(get_app_dir())) or "GeoVolumePro"
+        ctk.CTkLabel(grp_load, text=f"Выбор проекта ({app_folder_name}/Projects):", anchor="w", height=16).pack(fill=tk.X, pady=(8, 0))
+        self.cbo_projects = ctk.CTkComboBox(grp_load, values=[], height=26,
+                                             command=self._on_cbo_project_selected)
+        self.cbo_projects.pack(fill=tk.X, pady=(1, 2))
+        add_tooltip(self.cbo_projects, f"Выбор сохраненного проекта из папки {app_folder_name}/Projects")
+
+        # Кнопки Открыть папку и Удалить проект
+        btn_box2 = ctk.CTkFrame(grp_load, fg_color="transparent")
+        btn_box2.pack(fill=tk.X, pady=(0, 2))
+        b_folder = ctk.CTkButton(btn_box2, text="📁 Открыть папку", width=0, height=24,
+                                 command=self._open_project_folder)
+        b_folder.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 2))
+        add_tooltip(b_folder, "Открыть папку текущего проекта в Проводнике Windows")
+
+        b_del = ctk.CTkButton(btn_box2, text="Удалить проект", width=0, height=24,
+                              fg_color="#8B2020", hover_color="#A02828",
+                              command=self._delete_selected_project)
+        b_del.pack(side=tk.RIGHT, padx=(2, 0))
+        add_tooltip(b_del, "Удалить выбранный проект и связанные данные")
 
         self.lbl_file_info = ctk.CTkLabel(grp_load, text="Проект не загружен",
                                            text_color=("#52525b", "#a1a1aa"),
