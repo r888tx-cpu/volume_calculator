@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 Модуль экспорта геодезической картограммы земляных масс в формат DXF (AutoCAD).
 Соответствует требованиям ГОСТ 21.508-2020 (СПДС. Правила выполнения рабочей документации
@@ -901,8 +901,9 @@ def export_plan_2d_dxf(
     coord_swap: bool = True
 ) -> Tuple[bool, str]:
     """
-    Экспортирует 2D план съёмки и контур границы в формат AutoCAD DXF.
-    Для выемки экспортируются точки и контур нижней поверхности, для насыпи - верхней.
+    Экспортирует 2D план съёмки в формат AutoCAD DXF.
+    Включает: контур границы, точки съёмки, отметки в узлах сетки
+    (красная проектная / черная фактическая / рабочая разница) и ведомость объёмов.
     """
     if not EZDXF_AVAILABLE:
         return False, "Библиотека ezdxf не установлена."
@@ -921,9 +922,14 @@ def export_plan_2d_dxf(
         v_cut = calc_results.get("v_cut", 0.0) if calc_results else 0.0
         v_fill = calc_results.get("v_fill", 0.0) if calc_results else 0.0
         is_cut = (work_type == "cut" or (work_type in ("auto", "grading") and v_cut > v_fill))
-        surf_label = "2D План (выемка / нижняя поверхность)" if is_cut else "2D План (насыпь / верхняя поверхность)"
+        surf_label = "2D Plan (cut/bottom)" if is_cut else "2D Plan (fill/top)"
 
-        doc.layers.add("0_ГРАНИЦА_РАБОТ", color=1, lineweight=50)
+        # Слои
+        for lname, lattr in DEFAULT_DXF_LAYERS.items():
+            if lname not in doc.layers:
+                layer = doc.layers.add(lname, color=lattr["color"])
+                if "lineweight" in lattr:
+                    layer.dxf.lineweight = lattr["lineweight"]
         doc.layers.add("ТОЧКИ_СЪЕМКИ", color=3 if not is_cut else 1, lineweight=20)
         doc.layers.add("ПОДПИСИ_ТОЧЕК", color=7, lineweight=15)
 
@@ -932,27 +938,163 @@ def export_plan_2d_dxf(
         if (boundary is None or len(boundary) < 3) and points and boundary_indices and len(boundary_indices) >= 3:
             boundary = np.array([[points[i].x, points[i].y, points[i].h] for i in boundary_indices])
 
+        poly_2d = None
         if boundary is not None and len(boundary) >= 3:
-            cad_bound = [to_cad(pt[0], pt[1]) for pt in boundary[:, :2]]
+            poly_2d = boundary[:, :2]
+            cad_bound = [to_cad(pt[0], pt[1]) for pt in poly_2d]
             msp.add_lwpolyline(cad_bound, close=True, dxfattribs={"layer": "0_ГРАНИЦА_РАБОТ", "lineweight": 50})
 
-        # Фильтрация точек: для выемки - нижняя поверхность, для насыпи - верхняя
-        target_pts = []
+        # Точки съёмки
         target_surf = "bottom" if is_cut else "top"
-        for p in points:
-            st = getattr(p, "surface_type", None)
-            if st == target_surf or st is None:
-                target_pts.append(p)
-
+        target_pts = [p for p in points if getattr(p, "surface_type", None) in (target_surf, None)]
         if not target_pts:
             target_pts = points
-
         for idx, p in enumerate(target_pts):
             xc, yc = to_cad(p.x, p.y)
             msp.add_point((xc, yc, float(p.h)), dxfattribs={"layer": "ТОЧКИ_СЪЕМКИ"})
             pid_str = f"#{idx+1}" if not getattr(p, "id", None) else str(p.id)
             t = msp.add_text(f"{pid_str} ({p.h:.2f})", dxfattribs={"layer": "ПОДПИСИ_ТОЧЕК", "height": 0.45})
             t.set_placement((xc + 0.25, yc + 0.25, float(p.h)), align=TextEntityAlignment.LEFT)
+
+        # Отметки в узлах координатной сетки
+        if poly_2d is not None and calc_results:
+            x_min, x_max = float(np.min(poly_2d[:, 0])), float(np.max(poly_2d[:, 0]))
+            y_min, y_max = float(np.min(poly_2d[:, 1])), float(np.max(poly_2d[:, 1]))
+            span_x, span_y = x_max - x_min, y_max - y_min
+            step = choose_auto_grid_step(span_x, span_y)
+            th = max(0.20, step * 0.065)
+
+            import matplotlib.path as mpl_path
+            bound_path = mpl_path.Path(poly_2d)
+
+            from scipy.interpolate import RegularGridInterpolator, NearestNDInterpolator
+            gx = calc_results.get("grid_x")
+            gy = calc_results.get("grid_y")
+            zt_grid = calc_results.get("z_top_grid")
+            zb_grid = calc_results.get("z_bot_grid")
+
+            interp_top, interp_bot = None, None
+            if gx is not None and gy is not None and zt_grid is not None and zb_grid is not None:
+                try:
+                    xs = np.unique(gx)
+                    ys = np.unique(gy)
+                    rgi_top = RegularGridInterpolator((ys, xs), zt_grid, bounds_error=False, fill_value=np.nan)
+                    rgi_bot = RegularGridInterpolator((ys, xs), zb_grid, bounds_error=False, fill_value=np.nan)
+                    interp_top = lambda pt: float(rgi_top([pt[1], pt[0]])[0])
+                    interp_bot = lambda pt: float(rgi_bot([pt[1], pt[0]])[0])
+                except Exception:
+                    pass
+
+            top_pts_arr = calc_results.get("top_surface_pts")
+            if top_pts_arr is None or len(top_pts_arr) == 0:
+                top_pts_arr = np.array([[p.x, p.y, p.h] for p in points if getattr(p, "surface_type", None) == "top"])
+            bot_pts_arr = calc_results.get("bottom_surface_pts")
+            if bot_pts_arr is None or len(bot_pts_arr) == 0:
+                bot_pts_arr = np.array([[p.x, p.y, p.h] for p in points if getattr(p, "surface_type", None) == "bottom"])
+            fallback_top = NearestNDInterpolator(top_pts_arr[:, :2], top_pts_arr[:, 2]) \
+                if top_pts_arr is not None and len(top_pts_arr) > 0 else None
+            fallback_bot = NearestNDInterpolator(bot_pts_arr[:, :2], bot_pts_arr[:, 2]) \
+                if bot_pts_arr is not None and len(bot_pts_arr) > 0 else None
+
+            x_coords = np.arange(math.floor(x_min / step) * step,
+                                  math.ceil(x_max / step) * step + step * 0.5, step)
+            y_coords = np.arange(math.floor(y_min / step) * step,
+                                  math.ceil(y_max / step) * step + step * 0.5, step)
+            cross_sz = th * 0.35
+
+            for xn in x_coords:
+                for yn in y_coords:
+                    if not bound_path.contains_point((xn, yn), radius=step * 0.75):
+                        continue
+                    z_t, z_b = np.nan, np.nan
+                    if interp_top:
+                        try:
+                            v = interp_top((xn, yn))
+                            if not np.isnan(v):
+                                z_t = v
+                        except Exception:
+                            pass
+                    if np.isnan(z_t) and fallback_top:
+                        try:
+                            z_t = float(fallback_top(xn, yn))
+                        except Exception:
+                            pass
+                    if interp_bot:
+                        try:
+                            v = interp_bot((xn, yn))
+                            if not np.isnan(v):
+                                z_b = v
+                        except Exception:
+                            pass
+                    if np.isnan(z_b) and fallback_bot:
+                        try:
+                            z_b = float(fallback_bot(xn, yn))
+                        except Exception:
+                            pass
+                    if np.isnan(z_t) or np.isnan(z_b):
+                        continue
+                    dh = z_t - z_b
+                    xc, yc = to_cad(xn, yn)
+                    msp.add_line((xc - cross_sz, yc), (xc + cross_sz, yc),
+                                 dxfattribs={"layer": "0_СЕТКА_КАРТОГРАММЫ"})
+                    msp.add_line((xc, yc - cross_sz), (xc, yc + cross_sz),
+                                 dxfattribs={"layer": "0_СЕТКА_КАРТОГРАММЫ"})
+                    t_red = msp.add_text(f"{z_t:.2f}", dxfattribs={"layer": "ОТМЕТКИ_КРАСНЫЕ", "height": th})
+                    t_red.set_placement((xc + th * 0.25, yc + th * 0.40), align=TextEntityAlignment.LEFT)
+                    t_blk = msp.add_text(f"{z_b:.2f}", dxfattribs={"layer": "ОТМЕТКИ_ЧЕРНЫЕ", "height": th})
+                    t_blk.set_placement((xc + th * 0.25, yc - th * 0.80), align=TextEntityAlignment.LEFT)
+                    sign_str = "+" if dh > 0.005 else ("-" if dh < -0.005 else "")
+                    dh_layer = "ОТМЕТКИ_РАБОЧИЕ_НАСЫПЬ" if dh >= 0 else "ОТМЕТКИ_РАБОЧИЕ_ВЫЕМКА"
+                    t_dh = msp.add_text(f"{sign_str}{abs(dh):.2f}",
+                                        dxfattribs={"layer": dh_layer, "height": th})
+                    t_dh.set_placement((xc + th * 0.25, yc - th * 2.00), align=TextEntityAlignment.LEFT)
+
+        # Ведомость объёмов
+        if calc_results and poly_2d is not None:
+            all_cad_x = [to_cad(pt[0], pt[1])[0] for pt in poly_2d]
+            all_cad_y = [to_cad(pt[0], pt[1])[1] for pt in poly_2d]
+            step_tbl = choose_auto_grid_step(
+                float(np.max(poly_2d[:, 0]) - np.min(poly_2d[:, 0])),
+                float(np.max(poly_2d[:, 1]) - np.min(poly_2d[:, 1]))
+            )
+            tb_th = max(0.20, step_tbl * 0.065) * 0.65
+            tb_x0 = max(all_cad_x) + step_tbl * 0.8
+            tb_y0 = max(all_cad_y)
+            table_rows = [
+                ("ВЕДОМОСТЬ ОБЪЕМОВ ЗЕМЛЯНЫХ МАСС", ""),
+                ("Нормативный документ:", "ГОСТ 21.508-2020"),
+                ("Площадь в плане (2D):", f"{calc_results.get('area_2d', 0.0):.1f} м²"),
+                ("Объем насыпи (+):", f"{calc_results.get('v_fill', 0.0):.2f} м³"),
+                ("Объем выемки (-):", f"{calc_results.get('v_cut', 0.0):.2f} м³"),
+                ("Баланс земляных масс (нетто):", f"{calc_results.get('v_net', 0.0):.2f} м³"),
+                ("Средняя толщина слоя:", f"{calc_results.get('avg_thickness', 0.0):.2f} м"),
+                ("Программа расчета:", "GeoVolumePro"),
+            ]
+            row_h = tb_th * 2.2
+            col1_w = tb_th * 28.0
+            col2_w = tb_th * 18.0
+            tb_w = col1_w + col2_w
+            cur_y = tb_y0
+            for r_idx, (col1, col2) in enumerate(table_rows):
+                msp.add_lwpolyline(
+                    [(tb_x0, cur_y), (tb_x0 + tb_w, cur_y),
+                     (tb_x0 + tb_w, cur_y - row_h), (tb_x0, cur_y - row_h)],
+                    close=True, dxfattribs={"layer": "ТАБЛИЦА_БАЛАНСА", "lineweight": 25}
+                )
+                if r_idx == 0:
+                    t = msp.add_text(col1, dxfattribs={"layer": "ТАБЛИЦА_БАЛАНСА", "height": tb_th * 1.15})
+                    t.set_placement((tb_x0 + tb_w * 0.5, cur_y - row_h * 0.5),
+                                    align=TextEntityAlignment.MIDDLE_CENTER)
+                else:
+                    msp.add_line((tb_x0 + col1_w, cur_y), (tb_x0 + col1_w, cur_y - row_h),
+                                 dxfattribs={"layer": "ТАБЛИЦА_БАЛАНСА", "lineweight": 18})
+                    t1 = msp.add_text(f" {col1}", dxfattribs={"layer": "ТАБЛИЦА_БАЛАНСА", "height": tb_th})
+                    t1.set_placement((tb_x0 + tb_th * 0.6, cur_y - row_h * 0.5),
+                                     align=TextEntityAlignment.MIDDLE_LEFT)
+                    t2 = msp.add_text(f"{col2} ", dxfattribs={"layer": "ТАБЛИЦА_БАЛАНСА", "height": tb_th})
+                    t2.set_placement((tb_x0 + tb_w - tb_th * 0.6, cur_y - row_h * 0.5),
+                                     align=TextEntityAlignment.MIDDLE_RIGHT)
+                cur_y -= row_h
 
         doc.saveas(output_path)
         return True, f"2D план ({surf_label}) успешно экспортирован в DXF:\n{output_path}"
