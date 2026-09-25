@@ -235,3 +235,87 @@ def test_dxf_export_all_tabs():
         doc = ezdxf.readfile(p_diff)
         assert len(list(doc.modelspace().query("TEXT"))) > 0
 
+
+def test_auto_save_all_tabs_to_project(tmp_path):
+    """Проверяет, что сохранение PNG, DXF и отчета выполняется автоматически в папку проекта с коротким сообщением."""
+    from unittest.mock import MagicMock
+    import tkinter.messagebox
+    from interactive_app import VolumeApp
+
+    # Создаем mock app
+    app = VolumeApp.__new__(VolumeApp)
+    app.tk = MagicMock()
+    app._current_project_dir = str(tmp_path)
+    app.points = [
+        GeoPoint(id="1", x=0.0, y=0.0, h=10.0, surface_type="top"),
+        GeoPoint(id="2", x=10.0, y=0.0, h=10.0, surface_type="top"),
+        GeoPoint(id="3", x=10.0, y=10.0, h=10.0, surface_type="top"),
+        GeoPoint(id="4", x=0.0, y=10.0, h=10.0, surface_type="top"),
+    ]
+    app.boundary_indices = [0, 1, 2, 3]
+    app.calc_results = {
+        "v_fill": 100.0,
+        "v_cut": 0.0,
+        "v_net": 100.0,
+        "area_2d": 100.0,
+        "top_area_3d": 100.0,
+        "bot_area_3d": 100.0,
+        "avg_thickness": 1.0,
+        "max_thickness": 1.0,
+        "min_thickness": 1.0,
+        "boundary": np.array([[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]]),
+        "work_type": "fill",
+        "top_surface_pts": np.array([[0.0, 0.0, 10.0], [10.0, 0.0, 10.0], [10.0, 10.0, 10.0]]),
+    }
+    app.tin_simplices = None
+    app.contour_step = 0.5
+    app.lbl_report_status = MagicMock()
+    app.txt_results = MagicMock()
+    app.txt_results.get.return_value = "Тестовый отчет"
+
+    app.TAB_2D = "2D План / Сечения"
+    app.TAB_3D = "3D Поверхность"
+    app.TAB_DIFF = "Картограмма масс"
+    app.TAB_TIN = "TIN Триангуляция"
+    app.TAB_CONTOURS = "Горизонтали"
+    app.TAB_TABLE = "Таблица точек"
+
+    # 1. Проверка _clean_tab_name_for_file
+    assert app._clean_tab_name_for_file(app.TAB_2D) == "2D_План"
+    assert app._clean_tab_name_for_file(app.TAB_3D) == "3D_Модель"
+    assert app._clean_tab_name_for_file(app.TAB_DIFF) == "Картограмма"
+    assert app._clean_tab_name_for_file(app.TAB_TIN) == "TIN_Триангуляция"
+    assert app._clean_tab_name_for_file(app.TAB_CONTOURS) == "Горизонтали"
+
+    shown_messages = []
+    def mock_showinfo(title, msg, **kwargs):
+        shown_messages.append((title, msg))
+
+    orig_showinfo = tkinter.messagebox.showinfo
+    orig_showerror = tkinter.messagebox.showerror
+    tkinter.messagebox.showinfo = mock_showinfo
+    tkinter.messagebox.showerror = MagicMock()
+    try:
+        # 2. Экспорт DXF для всех графических вкладок
+        tabs = [app.TAB_2D, app.TAB_3D, app.TAB_DIFF, app.TAB_TIN, app.TAB_CONTOURS]
+        for tab in tabs:
+            shown_messages.clear()
+            app._export_tab_dxf(tab)
+            assert len(shown_messages) == 1, f"Failed for tab {tab}"
+            title, msg = shown_messages[0]
+            assert title == "Сохранено"
+            assert "сохранен в папку проекта." in msg
+            assert ".dxf" in msg
+
+        # 3. Сохранение отчета
+        shown_messages.clear()
+        app._save_report_to_project()
+        assert len(shown_messages) == 1
+        title, msg = shown_messages[0]
+        assert title == "Сохранено"
+        assert "сохранен в папку проекта." in msg
+        assert "_report.txt" in msg
+
+    finally:
+        tkinter.messagebox.showinfo = orig_showinfo
+        tkinter.messagebox.showerror = orig_showerror

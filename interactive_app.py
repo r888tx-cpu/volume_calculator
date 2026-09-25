@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 Интерактивное графическое приложение (GUI) на базе Tkinter и Matplotlib
 для визуализации точек, интерактивного выбора контура сшивания и расчета объемов.
@@ -6859,6 +6859,20 @@ class VolumeApp(_AppBase):
             pass
         return icon_path
 
+    def _clean_tab_name_for_file(self, tab_name: str) -> str:
+        if tab_name == getattr(self, "TAB_2D", "2D"):
+            return "2D_План"
+        elif tab_name == getattr(self, "TAB_3D", "3D"):
+            return "3D_Модель"
+        elif tab_name == getattr(self, "TAB_DIFF", "Картограмма"):
+            return "Картограмма"
+        elif tab_name == getattr(self, "TAB_TIN", "TIN"):
+            return "TIN_Триангуляция"
+        elif tab_name == getattr(self, "TAB_CONTOURS", "Горизонтали"):
+            return "Горизонтали"
+        safe = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in str(tab_name))
+        return safe.strip("_") or "Схема"
+
     def _save_tab_image(self, fig, tab_name: str):
         """Сохраняет изображение схемы в папку проекта с именем активной вкладки"""
         proj_dir = self._current_project_dir if self._current_project_dir else get_projects_dir()
@@ -6866,7 +6880,10 @@ class VolumeApp(_AppBase):
             os.makedirs(proj_dir, exist_ok=True)
         except Exception:
             pass
-        filename = f"{tab_name}.png"
+        folder_name = os.path.basename(proj_dir) if self._current_project_dir else "Проект"
+        base_name = self._strip_date_from_folder_name(folder_name) or folder_name
+        clean_name = self._clean_tab_name_for_file(tab_name)
+        filename = f"{base_name}_{clean_name}.png"
         out_path = os.path.join(proj_dir, filename)
 
         temp_annotations = []
@@ -6887,7 +6904,7 @@ class VolumeApp(_AppBase):
         try:
             fig.savefig(out_path, dpi=300, bbox_inches="tight")
             self.lbl_report_status.configure(text=f"✓ Схема сохранена: {filename}")
-            messagebox.showinfo("Сохранено", f"Изображение «{tab_name}» успешно сохранено в папку проекта:\n{out_path}")
+            messagebox.showinfo("Сохранено", f"Файл {filename} сохранен в папку проекта.", parent=self)
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось сохранить изображение:\n{e}")
         finally:
@@ -6909,15 +6926,20 @@ class VolumeApp(_AppBase):
             pass
         folder_name = os.path.basename(proj_dir) if self._current_project_dir else "Проект"
         base_name = self._strip_date_from_folder_name(folder_name) or folder_name
-        report_path = os.path.join(proj_dir, f"{base_name}_report.txt")
+        filename = f"{base_name}_report.txt"
+        report_path = os.path.join(proj_dir, filename)
         try:
-            report_text = self.txt_results.get("1.0", tk.END)
+            if hasattr(self.txt_results, "get"):
+                report_text = self.txt_results.get("1.0", tk.END)
+            else:
+                report_text = str(self.txt_results)
             with open(report_path, "w", encoding="utf-8") as out:
                 out.write(report_text)
-            self.lbl_report_status.configure(text=f"✓ Отчёт сохранен: {os.path.basename(report_path)}")
-            messagebox.showinfo("Сохранено", f"Отчет успешно сохранен в папку проекта:\n{report_path}")
+            if hasattr(self, "lbl_report_status") and self.lbl_report_status:
+                self.lbl_report_status.configure(text=f"✓ Отчёт сохранен: {filename}")
+            messagebox.showinfo("Сохранено", f"Файл {filename} сохранен в папку проекта.", parent=self)
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось сохранить отчет:\n{e}")
+            messagebox.showerror("Ошибка", f"Не удалось сохранить отчет:\n{e}", parent=self)
 
     def _get_themed_toolbar_icon(self, name: str, is_dark: bool):
         """Возвращает адаптированную по контрасту PhotoImage для кнопок тулбара под светлую/тёмную тему."""
@@ -7097,7 +7119,7 @@ class VolumeApp(_AppBase):
             messagebox.showerror("Ошибка", f"Не удалось открыть диалог экспорта DXF:\n{e}", parent=self)
 
     def _export_tab_dxf(self, tab_name: Optional[str] = None):
-        """Экспортирует чертеж активной графической вкладки в формат AutoCAD DXF."""
+        """Экспортирует чертеж активной графической вкладки в формат AutoCAD DXF напрямую в папку проекта."""
         if not self.calc_results or "error" in self.calc_results:
             messagebox.showwarning("Внимание", "Сначала выполните расчёт объема земляных масс.", parent=self)
             return
@@ -7105,9 +7127,7 @@ class VolumeApp(_AppBase):
         if not tab_name:
             tab_name = self.tabview.get() if hasattr(self, "tabview") else ""
 
-        # Для картограммы масс открываем подробный диалог настройки картограммы
-        if tab_name == self.TAB_DIFF:
-            self._open_dxf_export_dialog()
+        if tab_name == getattr(self, "TAB_TABLE", "Таблица точек"):
             return
 
         proj_dir = self._current_project_dir if self._current_project_dir else get_projects_dir()
@@ -7117,43 +7137,24 @@ class VolumeApp(_AppBase):
             pass
         folder_name = os.path.basename(proj_dir) if self._current_project_dir else "Проект"
         base_name = self._strip_date_from_folder_name(folder_name) or folder_name
-
-        if tab_name == self.TAB_2D:
-            clean_name = "2D_План"
-            title = "2D плана съёмки"
-        elif tab_name == self.TAB_3D:
-            clean_name = "3D_Модель"
-            title = "3D модели поверхности"
-        elif tab_name == self.TAB_TIN:
-            clean_name = "TIN_Триангуляция"
-            title = "TIN-триангуляции"
-        elif tab_name == getattr(self, "TAB_CONTOURS", "Горизонтали"):
-            clean_name = "Горизонтали"
-            title = "топографических горизонталей"
-        else:
-            self._open_dxf_export_dialog()
-            return
-
-        default_fn = f"{base_name}_{clean_name}.dxf"
-        out_path = filedialog.asksaveasfilename(
-            parent=self,
-            title=f"Экспорт {title} в DXF",
-            initialdir=proj_dir,
-            initialfile=default_fn,
-            defaultextension=".dxf",
-            filetypes=[("AutoCAD DXF", "*.dxf"), ("Все файлы", "*.*")]
-        )
-        if not out_path:
-            return
+        clean_name = self._clean_tab_name_for_file(tab_name)
+        filename = f"{base_name}_{clean_name}.dxf"
+        out_path = os.path.join(proj_dir, filename)
 
         try:
             from dxf_exporter import (
                 export_surface_3d_dxf,
                 export_tin_dxf,
                 export_contours_dxf,
-                export_plan_2d_dxf
+                export_plan_2d_dxf,
+                export_cartogram_dxf
             )
-            if tab_name == self.TAB_TIN:
+            if tab_name == self.TAB_DIFF:
+                ok, msg = export_cartogram_dxf(
+                    self.calc_results, self.points, self.boundary_indices,
+                    out_path, coord_swap=True
+                )
+            elif tab_name == self.TAB_TIN:
                 tin_simps = getattr(self, "tin_simplices", None)
                 ok, msg = export_tin_dxf(
                     self.calc_results, self.points, self.boundary_indices,
@@ -7179,7 +7180,9 @@ class VolumeApp(_AppBase):
                 ok, msg = False, "Неизвестный тип вкладки"
 
             if ok:
-                messagebox.showinfo("Успешно", msg, parent=self)
+                if hasattr(self, "lbl_report_status") and self.lbl_report_status:
+                    self.lbl_report_status.configure(text=f"✓ DXF: {filename}")
+                messagebox.showinfo("Сохранено", f"Файл {filename} сохранен в папку проекта.", parent=self)
             else:
                 messagebox.showerror("Ошибка экспорта", msg, parent=self)
         except Exception as e:
