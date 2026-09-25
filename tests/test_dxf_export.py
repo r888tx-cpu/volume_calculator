@@ -81,7 +81,7 @@ def test_dxf_export_basic():
 
         # Проверяем слои
         layer_names = set(layer.dxf.name for layer in doc.layers)
-        for expected in ["0_ГРАНИЦА_РАБОТ", "0_СЕТКА_КАРТОГРАММЫ", "ОТМЕТКИ_КРАСНЫЕ", "ОТМЕТКИ_ЧЕРНЫЕ", "ТАБЛИЦА_БАЛАНСА"]:
+        for expected in ["0_ГРАНИЦА_РАБОТ", "0_СЕТКА_КАРТОГРАММЫ", "ОТМЕТКИ_КРАСНЫЕ", "ОТМЕТКИ_ЧЕРНЫЕ", "РЕЗУЛЬТАТЫ_РАСЧЕТА"]:
             assert expected in layer_names
 
         # Проверяем элементы в пространстве модели
@@ -91,7 +91,7 @@ def test_dxf_export_basic():
 
         # Проверяем наличие кириллических надписей
         text_contents = [t.dxf.text for t in texts]
-        assert any("ВЕДОМОСТЬ ОБЪЕМОВ ЗЕМЛЯНЫХ МАСС" in t for t in text_contents)
+        assert any("РЕЗУЛЬТАТЫ РАСЧЕТА ОБЪЕМА" in t for t in text_contents)
         assert any("м³" in t for t in text_contents)
         assert any("м²" in t for t in text_contents)
 

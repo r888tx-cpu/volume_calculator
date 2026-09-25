@@ -11,7 +11,7 @@
 - Отрисовку линии нулевых работ (нулевой баланс)
 - Отрисовку проектной границы работ (контура сшивания)
 - Отображение исходных пикетов (точек съемки)
-- Сводную ведомость земляных масс (таблицу баланса)
+- Текстовый блок результатов расчёта (объемы, площади, мощность слоя)
 - Строгое разнесение по именованным слоям с весами линий и цветами
 """
 
@@ -40,7 +40,7 @@ DEFAULT_DXF_LAYERS = {
     "ПЛОЩАДИ_ЯЧЕЕК": {"color": 8, "lineweight": 15},             # 8 = Gray (площадь)
     "ТОЧКИ_СЪЕМКИ_ВЕРХ": {"color": 1, "lineweight": 15},         # 1 = Red
     "ТОЧКИ_СЪЕМКИ_НИЗ": {"color": 5, "lineweight": 15},          # 5 = Blue
-    "ТАБЛИЦА_БАЛАНСА": {"color": 7, "lineweight": 25},           # 7 = White/Black
+    "РЕЗУЛЬТАТЫ_РАСЧЕТА": {"color": 7, "lineweight": 25},       # 7 = White/Black
 }
 
 
@@ -57,6 +57,47 @@ def choose_auto_grid_step(span_x: float, span_y: float) -> float:
         return 20.0
     else:
         return 50.0
+
+
+def _add_results_text_block(
+    msp,
+    calc_results: Dict[str, Any],
+    anchor_x: float,
+    anchor_y: float,
+    text_height: float = 0.35,
+):
+    """
+    Добавляет простой текстовый блок с результатами расчёта в DXF.
+    Текст в столбик, без рамок и линий, без указания программы и версии.
+    """
+    layer = "РЕЗУЛЬТАТЫ_РАСЧЕТА"
+    th = text_height
+    line_spacing = th * 2.2
+
+    lines = [
+        "РЕЗУЛЬТАТЫ РАСЧЕТА ОБЪЕМА",
+        "",
+        f"Объем насыпи (Fill):    {calc_results.get('v_fill', 0.0):.3f} м³",
+        f"Объем выемки (Cut):     {calc_results.get('v_cut', 0.0):.3f} м³",
+        f"ИТОГОВЫЙ ОБЪЕМ (Net):   {calc_results.get('v_net', 0.0):.3f} м³",
+        "",
+        f"Площадь контура (2D):   {calc_results.get('area_2d', 0.0):.3f} м²",
+        f"Площадь верха (3D):     {calc_results.get('top_area_3d', 0.0):.3f} м²",
+        f"Площадь низа (3D):      {calc_results.get('bot_area_3d', 0.0):.3f} м²",
+        "",
+        f"Средняя мощность слоя:  {calc_results.get('avg_thickness', 0.0):.3f} м",
+        f"Макс. мощность слоя:    {calc_results.get('max_thickness', 0.0):.3f} м",
+        f"Мин. мощность слоя:     {calc_results.get('min_thickness', 0.0):.3f} м",
+    ]
+
+    cur_y = anchor_y
+    for line_text in lines:
+        if line_text == "":
+            cur_y -= line_spacing * 0.5
+            continue
+        t = msp.add_text(line_text, dxfattribs={"layer": layer, "height": th})
+        t.set_placement((anchor_x, cur_y), align=TextEntityAlignment.LEFT)
+        cur_y -= line_spacing
 
 
 def export_cartogram_dxf(
@@ -401,61 +442,13 @@ def export_cartogram_dxf(
                 t_lbl = msp.add_text(f"{pt_id_str} ({h_str})", dxfattribs={"layer": layer, "height": pt_th})
                 t_lbl.set_placement((xc + pt_rad * 1.5, yc + pt_rad * 0.5), align=TextEntityAlignment.LEFT)
 
-        # ── 9. Сводная ведомость земляных масс (таблица баланса) ───────────────
+        # ── 9. Текстовый блок результатов расчёта ───────────────
         if include_balance_table:
-            tb_th = th * 0.65  # Компактный, строгий шрифт для таблицы
-            # Размещаем таблицу справа от картограммы с отступом
             all_cad_x = [to_cad(pt[0], pt[1])[0] for pt in poly_2d]
             all_cad_y = [to_cad(pt[0], pt[1])[1] for pt in poly_2d]
             tb_x0 = max(all_cad_x) + step * 0.8
             tb_y0 = max(all_cad_y)
-
-            table_rows = [
-                ("ВЕДОМОСТЬ ОБЪЕМОВ ЗЕМЛЯНЫХ МАСС", ""),
-                ("Нормативный документ:", "ГОСТ 21.508-2020"),
-                ("Площадь в плане (2D):", f"{calc_results.get('area_2d', 0.0):.1f} м²"),
-                ("Объем насыпи (+):", f"{calc_results.get('v_fill', 0.0):.2f} м³"),
-                ("Объем выемки (-):", f"{calc_results.get('v_cut', 0.0):.2f} м³"),
-                ("Баланс земляных масс (нетто):", f"{calc_results.get('v_net', 0.0):.2f} м³"),
-                ("Средняя толщина слоя:", f"{calc_results.get('avg_thickness', 0.0):.2f} м"),
-                ("Максимальная толщина:", f"{calc_results.get('max_thickness', 0.0):.2f} м"),
-                ("Минимальная толщина:", f"{calc_results.get('min_thickness', 0.0):.2f} м"),
-                ("Шаг сетки картограммы:", f"{step:.1f} м"),
-                ("Программа расчета:", "GeoVolumePro"),
-            ]
-
-            row_h = tb_th * 2.2
-            col1_w = tb_th * 28.0
-            col2_w = tb_th * 18.0
-            tb_w = col1_w + col2_w
-
-            # Отрисовка рамки таблицы
-            cur_y = tb_y0
-            for r_idx, (col1, col2) in enumerate(table_rows):
-                # Внешний контур строки
-                msp.add_lwpolyline(
-                    [(tb_x0, cur_y), (tb_x0 + tb_w, cur_y),
-                     (tb_x0 + tb_w, cur_y - row_h), (tb_x0, cur_y - row_h)],
-                    close=True,
-                    dxfattribs={"layer": "ТАБЛИЦА_БАЛАНСА", "lineweight": 25}
-                )
-
-                if r_idx == 0:
-                    # Заголовок по центру
-                    t = msp.add_text(col1, dxfattribs={"layer": "ТАБЛИЦА_БАЛАНСА", "height": tb_th * 1.15})
-                    t.set_placement((tb_x0 + tb_w * 0.5, cur_y - row_h * 0.5), align=TextEntityAlignment.MIDDLE_CENTER)
-                else:
-                    # Разделитель колонок
-                    msp.add_line((tb_x0 + col1_w, cur_y), (tb_x0 + col1_w, cur_y - row_h),
-                                 dxfattribs={"layer": "ТАБЛИЦА_БАЛАНСА", "lineweight": 18})
-                    # Текст колонки 1 (название)
-                    t1 = msp.add_text(f" {col1}", dxfattribs={"layer": "ТАБЛИЦА_БАЛАНСА", "height": tb_th})
-                    t1.set_placement((tb_x0 + tb_th * 0.6, cur_y - row_h * 0.5), align=TextEntityAlignment.MIDDLE_LEFT)
-                    # Текст колонки 2 (значение)
-                    t2 = msp.add_text(f"{col2} ", dxfattribs={"layer": "ТАБЛИЦА_БАЛАНСА", "height": tb_th})
-                    t2.set_placement((tb_x0 + tb_w - tb_th * 0.6, cur_y - row_h * 0.5), align=TextEntityAlignment.MIDDLE_RIGHT)
-
-                cur_y -= row_h
+            _add_results_text_block(msp, calc_results, tb_x0, tb_y0, text_height=th * 0.65)
 
         # Сохранение файла
         doc.saveas(output_path)
@@ -550,6 +543,15 @@ def export_surface_3d_dxf(
             msp.add_point((xc, yc, float(p.h)), dxfattribs={"layer": "ТОЧКИ_СЪЕМКИ"})
             t = msp.add_text(f"{p.id} ({p.h:.2f})", dxfattribs={"layer": "ТОЧКИ_СЪЕМКИ", "height": 0.5})
             t.set_placement((xc + 0.3, yc + 0.3, float(p.h)), align=TextEntityAlignment.LEFT)
+
+        # Текстовый блок результатов расчёта
+        if boundary is not None and len(boundary) >= 3 and calc_results:
+            all_cad_x = [to_cad(pt[0], pt[1])[0] for pt in boundary[:, :2]]
+            all_cad_y = [to_cad(pt[0], pt[1])[1] for pt in boundary[:, :2]]
+            tb_x0 = max(all_cad_x) + (max(all_cad_x) - min(all_cad_x)) * 0.1 + 2.0
+            tb_y0 = max(all_cad_y)
+            doc.layers.add("РЕЗУЛЬТАТЫ_РАСЧЕТА", color=7, lineweight=25)
+            _add_results_text_block(msp, calc_results, tb_x0, tb_y0, text_height=0.35)
 
         doc.saveas(output_path)
         return True, f"3D модель ({surf_name}) успешно экспортирована в DXF:\n{output_path}"
@@ -665,6 +667,15 @@ def export_tin_dxf(
             msp.add_point((xc, yc, float(p.h)), dxfattribs={"layer": "TIN_ВЕРШИНЫ"})
             t = msp.add_text(f"#{idx+1} {p.id} ({p.h:.2f})", dxfattribs={"layer": "TIN_ВЕРШИНЫ", "height": 0.45})
             t.set_placement((xc + 0.25, yc + 0.25, float(p.h)), align=TextEntityAlignment.LEFT)
+
+        # Текстовый блок результатов расчёта
+        if boundary is not None and len(boundary) >= 3 and calc_results:
+            all_cad_x = [to_cad(pt[0], pt[1])[0] for pt in boundary[:, :2]]
+            all_cad_y = [to_cad(pt[0], pt[1])[1] for pt in boundary[:, :2]]
+            tb_x0 = max(all_cad_x) + (max(all_cad_x) - min(all_cad_x)) * 0.1 + 2.0
+            tb_y0 = max(all_cad_y)
+            doc.layers.add("РЕЗУЛЬТАТЫ_РАСЧЕТА", color=7, lineweight=25)
+            _add_results_text_block(msp, calc_results, tb_x0, tb_y0, text_height=0.35)
 
         doc.saveas(output_path)
         return True, f"TIN-триангуляция ({surf_label}) успешно экспортирована в DXF:\n{output_path}"
@@ -804,6 +815,15 @@ def export_contours_dxf(
                         t = msp.add_text(f"{level:.2f}", dxfattribs={"layer": "ОТМЕТКИ_ГОРИЗОНТАЛЕЙ", "height": 0.40})
                         t.set_placement((mx + 0.15, my + 0.15, float(level)), align=TextEntityAlignment.LEFT)
 
+        # Текстовый блок результатов расчёта
+        if boundary is not None and len(boundary) >= 3 and calc_results:
+            all_cad_x = [to_cad(pt[0], pt[1])[0] for pt in boundary[:, :2]]
+            all_cad_y = [to_cad(pt[0], pt[1])[1] for pt in boundary[:, :2]]
+            tb_x0 = max(all_cad_x) + (max(all_cad_x) - min(all_cad_x)) * 0.1 + 2.0
+            tb_y0 = max(all_cad_y)
+            doc.layers.add("РЕЗУЛЬТАТЫ_РАСЧЕТА", color=7, lineweight=25)
+            _add_results_text_block(msp, calc_results, tb_x0, tb_y0, text_height=0.35)
+
         doc.saveas(output_path)
         return True, f"Горизонтали ({surf_label}) успешно экспортированы в DXF:\n{output_path}"
     except Exception as e:
@@ -886,6 +906,15 @@ def export_diff_dxf(
                         layer = "ПЕРЕПАД_ВЫСОТ_НАСЫПЬ" if dh >= 0 else "ПЕРЕПАД_ВЫСОТ_ВЫЕМКА"
                         t = msp.add_text(f"{sign_s}{abs(dh):.2f}", dxfattribs={"layer": layer, "height": 0.4})
                         t.set_placement((xc + 0.1, yc + 0.1, dh), align=TextEntityAlignment.LEFT)
+
+        # Текстовый блок результатов расчёта
+        if boundary is not None and len(boundary) >= 3 and calc_results:
+            all_cad_x = [to_cad(pt[0], pt[1])[0] for pt in boundary[:, :2]]
+            all_cad_y = [to_cad(pt[0], pt[1])[1] for pt in boundary[:, :2]]
+            tb_x0 = max(all_cad_x) + (max(all_cad_x) - min(all_cad_x)) * 0.1 + 2.0
+            tb_y0 = max(all_cad_y)
+            doc.layers.add("РЕЗУЛЬТАТЫ_РАСЧЕТА", color=7, lineweight=25)
+            _add_results_text_block(msp, calc_results, tb_x0, tb_y0, text_height=0.35)
 
         doc.saveas(output_path)
         return True, f"Карта перепада высот успешно экспортирована в DXF:\n{output_path}"
@@ -1049,7 +1078,7 @@ def export_plan_2d_dxf(
                                         dxfattribs={"layer": dh_layer, "height": th})
                     t_dh.set_placement((xc + th * 0.25, yc - th * 2.00), align=TextEntityAlignment.LEFT)
 
-        # Ведомость объёмов
+        # Текстовый блок результатов расчёта
         if calc_results and poly_2d is not None:
             all_cad_x = [to_cad(pt[0], pt[1])[0] for pt in poly_2d]
             all_cad_y = [to_cad(pt[0], pt[1])[1] for pt in poly_2d]
@@ -1060,41 +1089,7 @@ def export_plan_2d_dxf(
             tb_th = max(0.20, step_tbl * 0.065) * 0.65
             tb_x0 = max(all_cad_x) + step_tbl * 0.8
             tb_y0 = max(all_cad_y)
-            table_rows = [
-                ("ВЕДОМОСТЬ ОБЪЕМОВ ЗЕМЛЯНЫХ МАСС", ""),
-                ("Нормативный документ:", "ГОСТ 21.508-2020"),
-                ("Площадь в плане (2D):", f"{calc_results.get('area_2d', 0.0):.1f} м²"),
-                ("Объем насыпи (+):", f"{calc_results.get('v_fill', 0.0):.2f} м³"),
-                ("Объем выемки (-):", f"{calc_results.get('v_cut', 0.0):.2f} м³"),
-                ("Баланс земляных масс (нетто):", f"{calc_results.get('v_net', 0.0):.2f} м³"),
-                ("Средняя толщина слоя:", f"{calc_results.get('avg_thickness', 0.0):.2f} м"),
-                ("Программа расчета:", "GeoVolumePro"),
-            ]
-            row_h = tb_th * 2.2
-            col1_w = tb_th * 28.0
-            col2_w = tb_th * 18.0
-            tb_w = col1_w + col2_w
-            cur_y = tb_y0
-            for r_idx, (col1, col2) in enumerate(table_rows):
-                msp.add_lwpolyline(
-                    [(tb_x0, cur_y), (tb_x0 + tb_w, cur_y),
-                     (tb_x0 + tb_w, cur_y - row_h), (tb_x0, cur_y - row_h)],
-                    close=True, dxfattribs={"layer": "ТАБЛИЦА_БАЛАНСА", "lineweight": 25}
-                )
-                if r_idx == 0:
-                    t = msp.add_text(col1, dxfattribs={"layer": "ТАБЛИЦА_БАЛАНСА", "height": tb_th * 1.15})
-                    t.set_placement((tb_x0 + tb_w * 0.5, cur_y - row_h * 0.5),
-                                    align=TextEntityAlignment.MIDDLE_CENTER)
-                else:
-                    msp.add_line((tb_x0 + col1_w, cur_y), (tb_x0 + col1_w, cur_y - row_h),
-                                 dxfattribs={"layer": "ТАБЛИЦА_БАЛАНСА", "lineweight": 18})
-                    t1 = msp.add_text(f" {col1}", dxfattribs={"layer": "ТАБЛИЦА_БАЛАНСА", "height": tb_th})
-                    t1.set_placement((tb_x0 + tb_th * 0.6, cur_y - row_h * 0.5),
-                                     align=TextEntityAlignment.MIDDLE_LEFT)
-                    t2 = msp.add_text(f"{col2} ", dxfattribs={"layer": "ТАБЛИЦА_БАЛАНСА", "height": tb_th})
-                    t2.set_placement((tb_x0 + tb_w - tb_th * 0.6, cur_y - row_h * 0.5),
-                                     align=TextEntityAlignment.MIDDLE_RIGHT)
-                cur_y -= row_h
+            _add_results_text_block(msp, calc_results, tb_x0, tb_y0, text_height=tb_th)
 
         doc.saveas(output_path)
         return True, f"2D план ({surf_label}) успешно экспортирован в DXF:\n{output_path}"
