@@ -92,8 +92,8 @@ def test_dxf_export_basic():
         # Проверяем наличие кириллических надписей
         text_contents = [t.dxf.text for t in texts]
         assert any("РЕЗУЛЬТАТЫ РАСЧЕТА ОБЪЕМА" in t for t in text_contents)
-        assert any("м³" in t for t in text_contents)
-        assert any("м²" in t for t in text_contents)
+        assert any("м3" in t for t in text_contents)
+        assert any("м2" in t for t in text_contents)
 
         # Проверяем полилинию границы
         polylines = list(msp.query("LWPOLYLINE"))

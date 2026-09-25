@@ -77,13 +77,13 @@ def _add_results_text_block(
     lines = [
         "РЕЗУЛЬТАТЫ РАСЧЕТА ОБЪЕМА",
         "",
-        f"Объем насыпи (Fill):    {calc_results.get('v_fill', 0.0):.3f} м³",
-        f"Объем выемки (Cut):     {calc_results.get('v_cut', 0.0):.3f} м³",
-        f"ИТОГОВЫЙ ОБЪЕМ (Net):   {calc_results.get('v_net', 0.0):.3f} м³",
+        f"Объем насыпи (Fill):    {calc_results.get('v_fill', 0.0):.3f} м3",
+        f"Объем выемки (Cut):     {calc_results.get('v_cut', 0.0):.3f} м3",
+        f"ИТОГОВЫЙ ОБЪЕМ (Net):   {calc_results.get('v_net', 0.0):.3f} м3",
         "",
-        f"Площадь контура (2D):   {calc_results.get('area_2d', 0.0):.3f} м²",
-        f"Площадь верха (3D):     {calc_results.get('top_area_3d', 0.0):.3f} м²",
-        f"Площадь низа (3D):      {calc_results.get('bot_area_3d', 0.0):.3f} м²",
+        f"Площадь контура (2D):   {calc_results.get('area_2d', 0.0):.3f} м2",
+        f"Площадь верха (3D):     {calc_results.get('top_area_3d', 0.0):.3f} м2",
+        f"Площадь низа (3D):      {calc_results.get('bot_area_3d', 0.0):.3f} м2",
         "",
         f"Средняя мощность слоя:  {calc_results.get('avg_thickness', 0.0):.3f} м",
         f"Макс. мощность слоя:    {calc_results.get('max_thickness', 0.0):.3f} м",
@@ -413,11 +413,11 @@ def export_cartogram_dxf(
                     # Формируем подпись объёма и площади
                     lines_to_draw = []
                     if v_f_cell > 0.01:
-                        lines_to_draw.append((f"+{v_f_cell:.1f} м³", "ОБЪЕМЫ_ЯЧЕЕК"))
+                        lines_to_draw.append((f"+{v_f_cell:.1f} м3", "ОБЪЕМЫ_ЯЧЕЕК"))
                     if v_c_cell > 0.01:
-                        lines_to_draw.append((f"-{v_c_cell:.1f} м³", "ОБЪЕМЫ_ЯЧЕЕК"))
+                        lines_to_draw.append((f"-{v_c_cell:.1f} м3", "ОБЪЕМЫ_ЯЧЕЕК"))
                     if s_cell > 0.05:
-                        lines_to_draw.append((f"S={s_cell:.1f} м²", "ПЛОЩАДИ_ЯЧЕЕК"))
+                        lines_to_draw.append((f"S={s_cell:.1f} м2", "ПЛОЩАДИ_ЯЧЕЕК"))
 
                     y_offset = (len(lines_to_draw) - 1) * 0.6 * cell_th
                     for text_val, layer_name in lines_to_draw:
