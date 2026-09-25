@@ -1,10 +1,10 @@
-# GeoVolume Pro v1.0.1 (Tkinter Edition)
+# GeoVolume Pro v1.1.0 (Tkinter Edition)
 
-[![Release](https://img.shields.io/github/v/release/r888tx-cpu/volume_calculator?color=0284c7&label=Релиз%20v1.0.1)](https://github.com/r888tx-cpu/volume_calculator/releases/tag/v1.0.1)
-[![Platform](https://img.shields.io/badge/Платформа-Windows%207%2F8%2F10%2F11-22c55e)](https://github.com/r888tx-cpu/volume_calculator/releases/tag/v1.0.1)
+[![Release](https://img.shields.io/github/v/release/r888tx-cpu/volume_calculator?color=0284c7&label=Релиз%20v1.1.0)](https://github.com/r888tx-cpu/volume_calculator/releases/tag/v1.1.0)
+[![Platform](https://img.shields.io/badge/Платформа-Windows%207%2F8%2F10%2F11-22c55e)](https://github.com/r888tx-cpu/volume_calculator/releases/tag/v1.1.0)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3b82f6)](https://www.python.org/)
 
-**GeoVolume Pro v1.0.1** — инженерная программа для расчета объемов земляных масс (насыпь, выемка, баланс) по геодезическим координатам (TXT, CSV, DAT, XYZ). Разработана на классическом графическом стеке Tkinter / Win32 GDI для гарантированной работы на всех версиях Windows, включая Windows 7, 8 и 8.1.
+**GeoVolume Pro v1.1.0** — инженерная программа для расчета объемов земляных масс (насыпь, выемка, баланс) по геодезическим координатам (TXT, CSV, DAT, XYZ). Разработана на классическом графическом стеке Tkinter / Win32 GDI для гарантированной работы на всех версиях Windows, включая Windows 7, 8 и 8.1.
 
 ---
 
@@ -14,13 +14,22 @@
 
 | ОС | Версия | Графический стек | Ссылка на скачивание |
 | :--- | :---: | :---: | :--- |
-| **Windows 7 / 8 / 8.1 / 10 / 11** (64-bit) | **v1.0.1** *(актуальная)* | Tkinter / Win32 GDI | 👉 [**GeoVolumePro_v1.0.1_win64.zip**](https://github.com/r888tx-cpu/volume_calculator/releases/download/v1.0.1/GeoVolumePro_v1.0.1_win64.zip) *(~65 МБ)* |
+| **Windows 7 / 8 / 8.1 / 10 / 11** (64-bit) | **v1.1.0** *(актуальная)* | Tkinter / Win32 GDI | 👉 [**GeoVolumePro_v1.1.0_win64.zip**](https://github.com/r888tx-cpu/volume_calculator/releases/download/v1.1.0/GeoVolumePro_v1.1.0_win64.zip) *(~65 МБ)* |
 
 **Запуск:** распакуйте архив и запустите `GeoVolumePro.exe`.
 
 ---
 
-## Возможности версии 1.0.1
+## Что нового в версии 1.1.0
+
+* **Импорт и экспорт DXF (AutoCAD / nanoCAD):** полноценный импорт съемок из файлов DXF, автоматический экспорт чертежей всех вкладок (2D план, 3D модель, картограмма масс, TIN-триангуляция, горизонтали) напрямую в папку проекта.
+* **Совместимость со шрифтами САПР:** единицы измерения оптимизированы для корректного отображения в nanoCAD и AutoCAD (без знаков вопроса `?`).
+* **Автоматическое сохранение:** мгновенное сохранение PNG, DXF и текстового отчета в папку проекта в один клик без диалоговых окон выбора папки.
+* **Косметические улучшения и bugfixes:** переорганизация панели управления, кнопка быстрого перехода в папку проекта в Проводнике Windows, динамическое имя папки программы, авто-построение контура для небольших съемок (до 8 точек), повышение стабильности работы.
+
+---
+
+## Возможности версии 1.1.0
 
 * **Совместимость:** 100% поддержка Windows 7 SP1, Windows 8, Windows 8.1, 10 и 11.
 * **Методы расчета:** послойная триангуляция Делоне (TIN) с обрезкой по контуру и численное интегрирование по регулярной сетке.

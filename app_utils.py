@@ -5,7 +5,7 @@
 import sys
 import os
 
-__version__ = "1.0.1"
+__version__ = "1.1.0"
 APP_NAME = "GeoVolume Pro"
 APP_TITLE = f"{APP_NAME} v{__version__}"
 
